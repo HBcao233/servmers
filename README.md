@@ -1,6 +1,12 @@
 # servme.rs
 
-Server Me Rust
+A set of Rust crates to provide services using the Mobile Transport Protocol, hence the name serv(er)me.rs.
+
+Base on [Lonami/grammers](https://codeberg.org/Lonami/grammers)
+
+## Current Status
+
+Very early.
 
 ## License
 

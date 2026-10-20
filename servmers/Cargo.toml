@@ -1,0 +1,26 @@
+[package]
+name = "servmers"
+version = "0.1.0"
+edition = "2021"
+description = "MTProto Server"
+authors = []
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["mtproto", "mtproto-server", "telegram", "grammers"]
+categories = ["network-programming"]
+
+[dependencies]
+servmers-crypto.workspace = true
+servmers-mtproto.workspace = true
+
+grammers-tl-types.workspace = true
+tokio = { version = "1.52.3", default-features = false, features = ["net", "io-util", "rt", "sync", "macros", "time"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "fmt", "env-filter"] }
+
+dashmap = "6.2.1"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", default-features = false, features = ["rt", "time"] }
+grammers-mtsender.workspace = true
+grammers-mtproto.workspace = true

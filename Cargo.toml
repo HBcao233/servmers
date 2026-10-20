@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "servmers",
+    "servmers-mtproto",
+    "servmers-crypto",
+]
+resolver = "2"
+
+[workspace.dependencies]
+servmers-crypto = { path = "servmers-crypto" }
+servmers-mtproto = { path = "servmers-mtproto" }
+
+grammers-crypto = { git = "https://codeberg.org/Lonami/grammers.git" }
+grammers-mtproto = { git = "https://codeberg.org/Lonami/grammers.git" }
+grammers-tl-types = { git = "https://codeberg.org/Lonami/grammers.git", features = ["tl-mtproto"] }
+grammers-mtsender = { git = "https://codeberg.org/Lonami/grammers.git" }
+tracing = "0.1.44"
+
+[patch.'https://codeberg.org/Lonami/grammers.git']
+grammers-crypto = { path = "../grammers/grammers-crypto" }
+grammers-mtproto = { path = "../grammers/grammers-mtproto" }
+grammers-tl-types = { path = "../grammers/grammers-tl-types" }
+grammers-mtsender = { path = "../grammers/grammers-mtsender" }

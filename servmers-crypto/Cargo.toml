@@ -1,0 +1,21 @@
+[package]
+name = "servmers-crypto"
+version = "0.1.0"
+authors = []
+license = "MIT OR Apache-2.0"
+description = """
+Several cryptographic utilities to work with Telegram's data.
+"""
+homepage = ""
+documentation = ""
+repository = ""
+keywords = ["telegram", "tl"]
+categories = ["cryptography"]
+edition = "2024"
+
+[dependencies]
+grammers-crypto.workspace = true
+aes = "0.9.1"
+getrandom = "0.4.3"
+sha1 = "0.11.0"
+sha2 = "0.11.0"

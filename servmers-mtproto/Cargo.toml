@@ -1,0 +1,25 @@
+[package]
+name = "servmers-mtproto"
+version = "0.1.0"
+authors = []
+license = "MIT OR Apache-2.0"
+description = """
+An implementation of the Mobile Transport Protocol.
+"""
+homepage = ""
+documentation = ""
+repository = ""
+keywords = ["mtproto", "telegram", "tl"]
+categories = ["network-programming"]
+edition = "2024"
+
+[dependencies]
+servmers-crypto.workspace = true
+
+grammers-mtproto.workspace = true
+grammers-tl-types.workspace = true
+tracing.workspace = true
+
+# Messages may be gzip-encoded to reduce bandwidth, so this crate is used for both decompressing
+# incoming messages and compressing them when it is worth it (based on some simple heuristics).
+flate2 = "1.1.9"

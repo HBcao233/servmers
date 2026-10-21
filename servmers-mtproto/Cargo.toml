@@ -1,7 +1,7 @@
 [package]
 name = "servmers-mtproto"
 version = "0.1.0"
-authors = []
+authors = ["HBcao <hbcaoqaq@outlook.com>"]
 license = "MIT OR Apache-2.0"
 description = """
 An implementation of the Mobile Transport Protocol.
@@ -19,6 +19,8 @@ servmers-crypto.workspace = true
 grammers-mtproto.workspace = true
 grammers-tl-types.workspace = true
 tracing.workspace = true
+
+bytes = "1.12.1"
 
 # Messages may be gzip-encoded to reduce bandwidth, so this crate is used for both decompressing
 # incoming messages and compressing them when it is worth it (based on some simple heuristics).

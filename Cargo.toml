@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "servmers",
+    "servmers-core",
     "servmers-mtproto",
     "servmers-crypto",
 ]
@@ -9,6 +10,7 @@ resolver = "2"
 [workspace.dependencies]
 servmers-crypto = { path = "servmers-crypto" }
 servmers-mtproto = { path = "servmers-mtproto" }
+servmers-core = { path = "servmers-core" }
 
 grammers-crypto = { git = "https://codeberg.org/Lonami/grammers.git" }
 grammers-mtproto = { git = "https://codeberg.org/Lonami/grammers.git" }

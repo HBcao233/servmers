@@ -1,7 +1,8 @@
-mod manual_tl;
+pub mod decode;
+// mod manual_tl;
 pub mod mtp;
-pub mod transport;
-mod utils;
+mod transport;
+// mod utils;
 
 pub use grammers_mtproto::DEFAULT_COMPRESSION_THRESHOLD;
 

@@ -1,13 +1,8 @@
-mod connection;
-mod errors;
-mod server;
-
 use std::path::PathBuf;
 
+use servmers_core::Server;
 use servmers_crypto::AuthKey;
 use tracing::info;
-
-use crate::server::Server;
 
 const PORT: u16 = 2391;
 const AUTH_KEY_BIN: &str = "auth_key.bin";
@@ -39,7 +34,7 @@ fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()

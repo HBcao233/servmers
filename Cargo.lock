@@ -815,15 +815,27 @@ dependencies = [
 name = "servmers"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "grammers-mtproto",
  "grammers-mtsender",
+ "grammers-tl-types",
+ "servmers-core",
+ "servmers-crypto",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "servmers-core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dashmap",
  "grammers-tl-types",
  "servmers-crypto",
  "servmers-mtproto",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -841,6 +853,7 @@ dependencies = [
 name = "servmers-mtproto"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "flate2",
  "grammers-mtproto",
  "grammers-tl-types",

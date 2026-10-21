@@ -1,0 +1,21 @@
+[package]
+name = "servmers-core"
+version = "0.1.0"
+authors = ["HBcao <hbcaoqaq@outlook.com>"]
+license = "MIT OR Apache-2.0"
+description = ""
+readme = "README.md"
+keywords = ["mtproto", "mtproto-server", "telegram", "grammers"]
+categories = ["network-programming"]
+edition = "2024"
+
+[dependencies]
+servmers-crypto.workspace = true
+servmers-mtproto.workspace = true
+
+grammers-tl-types.workspace = true
+tokio = { version = "1.52.3", default-features = false, features = ["net", "io-util", "sync", "time"] }
+tracing.workspace = true
+
+bytes = "1.12.1"
+dashmap = "6.2.1"

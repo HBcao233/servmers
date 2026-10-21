@@ -7,8 +7,9 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
-use crate::connection::Connection;
+use crate::connection::handle_connection;
 
+/// Maximum connection count.
 const MAX_CONNECTION: usize = 1000;
 
 pub struct AuthKeyCache {
@@ -38,7 +39,7 @@ pub struct Server {
 impl Server {
     pub async fn bind(listen: &str, auth_keys: Vec<AuthKey>) -> io::Result<Self> {
         let listener = TcpListener::bind(listen).await?;
-        info!("listening on {} (intermediate, fixed auth_key)", listen);
+        info!("listening on {}", listen);
         Ok(Self {
             listener,
             auth_keys: Arc::new(AuthKeyCache::new(auth_keys)),
@@ -60,8 +61,7 @@ impl Server {
             tokio::spawn(async move {
                 let _permit = permit;
 
-                let conn = Connection::new(stream, addr, auth_keys);
-                match conn.handle().await {
+                match handle_connection(stream, addr).await {
                     Ok(()) => info!(%addr, "connection closed"),
                     Err(e) => warn!(%addr, "connection failed: {e}"),
                 }

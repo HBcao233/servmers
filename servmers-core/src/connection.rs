@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use bytes::BytesMut;
-use servmers_mtproto::decode::{Decoder, Drive, Inbound};
+use servmers_mtproto::decode::{Decoder, Drive, Payload};
 use servmers_mtproto::mtp;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -41,11 +41,11 @@ pub async fn handle_connection(stream: TcpStream, addr: SocketAddr) -> Result<()
     let (mut reader, mut writer) = stream.into_split();
     let mut decoder = Decoder::new();
     let mut read_buffer = BytesMut::with_capacity(INITIAL_CAPACITY);
-    let mut frames = Vec::new();
+    let mut payloads = Vec::new();
 
     loop {
         loop {
-            match decoder.drive(&mut read_buffer, &mut frames) {
+            match decoder.drive(&mut read_buffer, &mut payloads) {
                 Ok(Drive::Progress) => {}
                 Ok(Drive::NeedMore) => break,
                 Err(e) => {
@@ -55,13 +55,10 @@ pub async fn handle_connection(stream: TcpStream, addr: SocketAddr) -> Result<()
             }
         }
 
-        on_frames(&mut frames);
+        on_payloads(&mut payloads);
 
         if read_buffer.len() > MAX_FRAME_BYTES {
-            warn!(
-                len = read_buffer.len(),
-                "recv buffer overflow",
-            );
+            warn!(len = read_buffer.len(), "recv buffer overflow",);
             return Err(ReadError::Overflow);
         }
 
@@ -114,8 +111,8 @@ fn on_net_read(&mut self, n: usize) -> Result<Vec<ClientRequest>, ReadError> {
     Ok(requests)
 }*/
 
-fn on_frames(frames: &mut Vec<Inbound>) {
-    for inbound in frames.drain(..) {
-        info!(?inbound);
+fn on_payloads(payloads: &mut Vec<Payload>) {
+    for payload in payloads.drain(..) {
+        info!(?payload);
     }
 }

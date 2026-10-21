@@ -62,7 +62,7 @@ impl Server {
                 let _permit = permit;
 
                 match handle_connection(stream, addr).await {
-                    Ok(()) => info!(%addr, "connection closed"),
+                    Ok(()) => {},
                     Err(e) => warn!(%addr, "connection failed: {e}"),
                 }
             });

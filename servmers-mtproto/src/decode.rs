@@ -38,7 +38,7 @@ impl fmt::Display for Error {
 }
 
 #[derive(Debug)]
-pub struct Inbound {
+pub struct Payload {
     pub auth_key_id: [u8; 8],
     pub payload: BytesMut,
 }
@@ -63,7 +63,7 @@ impl Decoder {
         }
     }
 
-    pub fn drive(&mut self, buf: &mut BytesMut, out: &mut Vec<Inbound>) -> Result<Drive, Error> {
+    pub fn drive(&mut self, buf: &mut BytesMut, out: &mut Vec<Payload>) -> Result<Drive, Error> {
         loop {
             match self.state {
                 State::Negotiating { need } => {
@@ -108,11 +108,13 @@ impl Decoder {
                         return Err(Error::MessageBufferTooSmall);
                     }
 
-                    let inbound = Inbound {
-                        auth_key_id: payload[..8].try_into().unwrap(),
-                        payload: payload.split_to(8),
+                    let auth_key_id = payload[..8].try_into().unwrap();
+                    payload.advance(8);
+                    let payload = Payload {
+                        auth_key_id,
+                        payload,
                     };
-                    out.push(inbound);
+                    out.push(payload);
 
                     return Ok(Drive::Progress);
                 }

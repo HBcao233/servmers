@@ -2,17 +2,24 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::BytesMut;
+use servmers_crypto::DequeBuffer;
 use servmers_mtproto::mtp;
-use servmers_mtproto::transport::{Drive, TransportDriver};
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
+use servmers_mtproto::transport::{
+    Drive, NegotiateError, NegotiateResult, Packer, TransportDriver,
+};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, tcp::OwnedWriteHalf};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, instrument, trace, warn};
 
 use crate::errors::ConnectionError;
 use crate::server::AuthKeyCache;
 
-/// After how many seconds should the server close the connection when we send a ping?
+/// Maximum handshake time.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// After how long should the server close the connection when we send a ping?
 ///
 /// What this value essentially means is that we have `NO_PING_DISCONNECT - PING_DELAY` seconds
 /// to keep sending pings, or the server will close the connection.
@@ -45,17 +52,57 @@ pub async fn handle_connection(
 ) -> Result<(), ConnectionError> {
     let (mut reader, mut writer) = stream.into_split();
     let mut driver = TransportDriver::new();
+
     let mut read_buffer = BytesMut::with_capacity(INITIAL_CAPACITY);
     let mut packets = Vec::new();
 
-    loop {
+    let packer = 'outer: loop {
+        loop {
+            match driver.negotiate(&mut read_buffer) {
+                Ok(NegotiateResult::Negotiated { packer }) => break 'outer Ok(packer),
+                Ok(NegotiateResult::NeedMore) => break,
+                Err(NegotiateError::UnsupportedTransport) => {
+                    break 'outer Err(ConnectionError::UnsupportedTransport);
+                }
+            }
+        }
+
+        if read_buffer.len() > MAX_FRAME_BYTES {
+            warn!(len = read_buffer.len(), "recv buffer overflow");
+            break Err(ConnectionError::Overflow);
+        }
+
+        match timeout(HANDSHAKE_TIMEOUT, reader.read_buf(&mut read_buffer)).await {
+            Err(_) => {
+                debug!("handshake timeout");
+                break Err(ConnectionError::Timeout);
+            }
+            Ok(Ok(0)) => {
+                break Err(ConnectionError::Io(
+                    std::io::ErrorKind::ConnectionReset.into(),
+                ));
+            }
+            Ok(Ok(n)) => {
+                trace!(n, "read");
+            }
+            Ok(Err(e)) => break Err(e.into()),
+        }
+    };
+    let packer = match packer {
+        Ok(packer) => packer,
+        Err(e) => return Err(e),
+    };
+
+    let (write_tx, write_rx) = mpsc::channel(100);
+    let write_task = tokio::task::spawn(write_loop(writer, write_rx, packer));
+
+    let result = 'outer: loop {
         loop {
             match driver.drive(&mut read_buffer, &mut packets) {
                 Ok(Drive::Progress) => {}
                 Ok(Drive::NeedMore) => break,
                 Err(e) => {
-                    // writer.abort();
-                    return Err(e.into());
+                    break 'outer Err(e.into());
                 }
             }
         }
@@ -63,27 +110,27 @@ pub async fn handle_connection(
         on_packets(&mut packets, Arc::clone(&auth_keys))?;
 
         if read_buffer.len() > MAX_FRAME_BYTES {
-            warn!(len = read_buffer.len(), "recv buffer overflow",);
-            return Err(ConnectionError::Overflow);
+            warn!(len = read_buffer.len(), "recv buffer overflow");
+            break Err(ConnectionError::Overflow);
         }
 
         match timeout(IDLE_TIMEOUT, reader.read_buf(&mut read_buffer)).await {
             Err(_) => {
                 debug!("idle timeout");
-                break;
+                break Ok(());
             }
-            Ok(Ok(0)) => break,
+            Ok(Ok(0)) => break Ok(()),
             Ok(Ok(n)) => {
-                trace!(n, "read")
+                trace!(n, "read");
             }
-            Ok(Err(e)) => {
-                return Err(e.into());
-            }
+            Ok(Err(e)) => break Err(e.into()),
         }
-    }
+    };
 
+    write_task.abort();
+    let _ = write_task.await;
     info!("connection closed");
-    Ok(())
+    result
 }
 
 fn on_packets(
@@ -108,6 +155,38 @@ fn on_packets(
             } = mtp::Encrypted::new(&auth_key).deserialize(&mut packet)?;
             info!(salt, session_id, ?messages);
         }
+    }
+
+    Ok(())
+}
+
+async fn write_loop(
+    mut writer: OwnedWriteHalf,
+    rx: mpsc::Receiver<Outbound>,
+    packer: Box<dyn Packer>,
+) -> Result<(), ConnectionError> {
+    let buf: DequeBuffer<u8> = DequeBuffer::with_capacity(INITIAL_CAPACITY, LEADING_BUFFER_SPACE);
+    let peeked = None;
+
+    while let Some(first) = rx.recv().await {
+        push(first, &mut buf);
+        while let Ok(next) = rx.try_recv() {
+            if buf.len() > MAX_FRAME_BYTES / 2 {
+                break;
+            }
+            push(&next, &mut buf)?;
+        }
+
+        finishize(&mut buf);
+
+        packer.pack(&mut buf);
+
+        writer.write_all(&buf[..]).await.map_err(|error| {
+            warn!(%error, "write failed");
+            ConnectionError::Io(error)
+        })?;
+
+        buf.clear();
     }
 
     Ok(())

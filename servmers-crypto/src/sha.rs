@@ -1,3 +1,5 @@
+// This code is copied from grammers-crypto (https://codeberg.org/Lonami/grammers.git).
+//
 // Copyright 2020 - developers of the `grammers` project.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or

@@ -1,36 +1,27 @@
-use std::fmt;
-
 use bytes::{Buf, BytesMut};
-use servmers_crypto::DequeBuffer;
 use tracing::debug;
 
-use crate::transport::{self, DetectError, Detected, Transport, UnpackedOffset};
+use crate::transport::{self, DetectError, Detected, Packer, UnpackedOffset, Unpacker};
 
-/// Result of a single `Decoder::drive` call.
+/// The result of [`TransportDriver::drive`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drive {
     /// At least one frame was produced; call `drive` again on the remainder.
     Progress,
-    /// The buffer does not hold a complete frame yet; go read more bytes.
+    /// The buffer does not hold a complete packet yet; go read more bytes.
     NeedMore,
 }
 
-#[derive(Clone, Debug)]
-pub enum DriverError {
-    UnsupportedTransport,
-    Transport(transport::Error),
-    // Deserialize(DeserializeError),
+pub enum NegotiateResult {
+    /// The buffer does not detected transport yet; go read more bytes.
+    NeedMore,
+    /// Negotiated transport; returns packer half
+    Negotiated { packer: Box<dyn Packer> },
 }
 
-impl std::error::Error for DriverError {}
-
-impl fmt::Display for DriverError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedTransport => write!(f, "unsupported transport"),
-            Self::Transport(err) => write!(f, "{err}"),
-        }
-    }
+pub enum NegotiateError {
+    /// The client uses an unsupported transport.
+    UnsupportedTransport,
 }
 
 /// Connection state.
@@ -38,7 +29,7 @@ enum State {
     /// Still sniffing the first bytes
     Negotiating { need: usize },
     /// Transport established, steady state.
-    Ready { transport: Transport },
+    Ready { unpacker: Box<dyn Unpacker> },
 }
 
 pub struct TransportDriver {
@@ -53,69 +44,65 @@ impl TransportDriver {
         }
     }
 
+    pub fn negotiate(&mut self, buf: &mut BytesMut) -> Result<NegotiateResult, NegotiateError> {
+        match self.state {
+            State::Negotiating { need } => {
+                if buf.len() < need {
+                    return Ok(NegotiateResult::NeedMore);
+                }
+
+                match transport::detect(buf) {
+                    Ok(Detected {
+                        packer,
+                        unpacker,
+                        preamble,
+                    }) => {
+                        debug!(preamble, "transport negotiated");
+                        buf.advance(preamble);
+                        self.state = State::Ready { unpacker };
+                        Ok(NegotiateResult::Negotiated { packer })
+                    }
+                    Err(DetectError::NeedMore(need)) => {
+                        self.state = State::Negotiating { need };
+                        Ok(NegotiateResult::NeedMore)
+                    }
+                    Err(DetectError::Unsupported) => Err(NegotiateError::UnsupportedTransport),
+                }
+            }
+            State::Ready { .. } => {
+                panic!("Already negotiated.");
+            }
+        }
+    }
+
     /// Try to negotiate transport, and then read a packet from buffer.
     pub fn drive(
         &mut self,
         buf: &mut BytesMut,
         out: &mut Vec<BytesMut>,
-    ) -> Result<Drive, DriverError> {
-        loop {
-            match self.state {
-                State::Negotiating { need } => {
-                    if buf.len() < need {
-                        return Ok(Drive::NeedMore);
-                    }
-
-                    match transport::detect(buf) {
-                        Ok(Detected {
-                            transport,
-                            preamble,
-                        }) => {
-                            debug!(preamble, "transport negotiated");
-                            buf.advance(preamble);
-                            self.state = State::Ready { transport };
-                        }
-                        Err(DetectError::NeedMore(need)) => {
-                            self.state = State::Negotiating { need };
-                        }
-                        Err(DetectError::Unsupported) => {
-                            return Err(DriverError::UnsupportedTransport);
-                        }
-                    }
-                }
-                State::Ready { ref mut transport } => {
-                    let UnpackedOffset {
-                        data_range,
-                        next_offset,
-                    } = match transport.unpack(buf) {
-                        Ok(offset) => offset,
-                        Err(transport::Error::MissingBytes) => return Ok(Drive::NeedMore),
-                        Err(err) => return Err(DriverError::Transport(err)),
-                    };
-
-                    // SAFETY
-                    let mut packet = buf.split_to(next_offset);
-                    let packet = packet
-                        .split_off(data_range.start)
-                        .split_to(data_range.end - data_range.start);
-
-                    out.push(packet);
-
-                    return Ok(Drive::Progress);
-                }
-            }
-        }
-    }
-
-    /// Using negotiated transport to pack the input buffer in-place.
-    ///
-    /// # Panics
-    ///
-    /// Panics if transport has not yet been negotiated.
-    fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
+    ) -> Result<Drive, transport::Error> {
         match self.state {
             State::Negotiating { .. } => panic!("Transport has not yet been negotiated."),
-            State::Ready { ref mut transport } => transport.pack(buffer),
+            State::Ready { ref mut unpacker } => {
+                let UnpackedOffset {
+                    data_range,
+                    next_offset,
+                } = match unpacker.unpack(buf) {
+                    Ok(offset) => offset,
+                    Err(transport::Error::MissingBytes) => return Ok(Drive::NeedMore),
+                    Err(err) => return Err(err),
+                };
+
+                // SAFETY
+                let mut packet = buf.split_to(next_offset);
+                let packet = packet
+                    .split_off(data_range.start)
+                    .split_to(data_range.end - data_range.start);
+
+                out.push(packet);
+
+                return Ok(Drive::Progress);
+            }
         }
     }
 }

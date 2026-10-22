@@ -11,6 +11,7 @@ use std::fmt;
 
 use grammers_tl_types as tl;
 use servmers_crypto as crypto;
+pub use grammers_mtproto::Mtp;
 
 use crate::MsgId;
 

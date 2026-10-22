@@ -6,7 +6,7 @@ use servmers_mtproto::{mtp, transport};
 /// This error occurs when reading from the network fails.
 #[derive(Debug)]
 pub enum ConnectionError {
-    /// Connection timeout.
+    /// Idle connection timeout.
     Timeout,
     /// Overflow
     Overflow,
@@ -14,8 +14,10 @@ pub enum ConnectionError {
     Forbidden,
     /// Standard I/O error.
     Io(io::Error),
+    /// Unsupported transport.
+    UnsupportedTransport,
     /// Error propagated from the underlying [`transport`].
-    Transport(transport::DriverError),
+    Transport(transport::Error),
     /// Error propagated from the underlying [`mtp`].
     Mtp(mtp::Error),
 }
@@ -33,6 +35,7 @@ impl Clone for ConnectionError {
                     .map(io::Error::from_raw_os_error)
                     .unwrap_or_else(|| io::Error::new(e.kind(), e.to_string())),
             ),
+            Self::UnsupportedTransport => Self::UnsupportedTransport,
             Self::Transport(e) => Self::Transport(e.clone()),
             Self::Mtp(e) => Self::Mtp(e.clone()),
         }
@@ -45,9 +48,10 @@ impl fmt::Display for ConnectionError {
             Self::Timeout => write!(f, "connection timeout"),
             Self::Overflow => write!(f, "read buffer overflow"),
             Self::Forbidden => write!(f, "no authentication"),
-            Self::Io(err) => write!(f, "read error, IO failed: {err}"),
-            Self::Transport(err) => write!(f, "read error, transport-level: {err}"),
-            Self::Mtp(err) => write!(f, "read error, mtp-level: {err}"),
+            Self::Io(err) => write!(f, "connection error, IO failed: {err}"),
+            Self::UnsupportedTransport => write!(f, "connection error, unsupported transport"),
+            Self::Transport(err) => write!(f, "connection error, transport-level: {err}"),
+            Self::Mtp(err) => write!(f, "connection error, mtp-level: {err}"),
         }
     }
 }
@@ -58,8 +62,8 @@ impl From<io::Error> for ConnectionError {
     }
 }
 
-impl From<transport::DriverError> for ConnectionError {
-    fn from(error: transport::DriverError) -> Self {
+impl From<transport::Error> for ConnectionError {
+    fn from(error: transport::Error) -> Self {
         Self::Transport(error)
     }
 }

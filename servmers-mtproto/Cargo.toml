@@ -21,6 +21,7 @@ grammers-tl-types.workspace = true
 tracing.workspace = true
 
 bytes = "1.12.1"
+crc32fast = "1.5.0"
 
 # Messages may be gzip-encoded to reduce bandwidth, so this crate is used for both decompressing
 # incoming messages and compressing them when it is worth it (based on some simple heuristics).

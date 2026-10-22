@@ -14,12 +14,14 @@
 #![deny(unsafe_code)]
 
 mod auth_key;
+mod obfuscated;
 mod sha;
 
 use std::fmt;
 
 pub use auth_key::AuthKey;
-pub use grammers_crypto::{DequeBuffer, ObfuscatedCipher, aes};
+pub use grammers_crypto::{DequeBuffer, aes};
+pub use obfuscated::{ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor};
 
 /// The error type for [`decrypt_data_v2`].
 #[derive(Clone, Debug, PartialEq)]

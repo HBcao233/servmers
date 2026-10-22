@@ -1,7 +1,6 @@
-use grammers_mtproto::transport::{Abridged, Full, Intermediate};
 use servmers_crypto::ObfuscatedCipher;
 
-use super::Transport;
+use super::{Abridged, Full, Intermediate, IntoSplit, Obfuscated, Packer, Unpacker};
 
 const ABRIDGED_TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 const INTERMEDIATE_TAG: [u8; 4] = [0xee, 0xee, 0xee, 0xee];
@@ -35,7 +34,8 @@ pub enum DetectError {
 /// The result of [`detect`].
 pub struct Detected {
     /// The result Transport.
-    pub transport: Transport,
+    pub packer: Box<dyn Packer>,
+    pub unpacker: Box<dyn Unpacker>,
     /// Need to skip bytes before unpack.
     pub preamble: usize,
 }
@@ -45,8 +45,10 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
     // 1. Abridged: 1 byte tag
     if let Some(&b) = buf.first() {
         if b == ABRIDGED_TAG[0] {
+            let (packer, unpacker) = Abridged::new().into_split();
             return Ok(Detected {
-                transport: Transport::Abridged(Abridged::new()),
+                packer: Box::new(packer),
+                unpacker: Box::new(unpacker),
                 preamble: 1,
             });
         }
@@ -59,8 +61,10 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
         return Err(DetectError::NeedMore(4));
     }
     if buf[..4] == INTERMEDIATE_TAG {
+        let (packer, unpacker) = Intermediate::new().into_split();
         return Ok(Detected {
-            transport: Transport::Intermediate(Intermediate::new()),
+            packer: Box::new(packer),
+            unpacker: Box::new(unpacker),
             preamble: 4,
         });
     }
@@ -73,8 +77,10 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
         let len = i32::from_le_bytes(buf[0..4].try_into().unwrap());
         let seq = i32::from_le_bytes(buf[4..8].try_into().unwrap());
         if (12..=MAX_PACKET_LEN).contains(&len) && len % 4 == 0 && seq == 0 {
+            let (packer, unpacker) = Full::new();
             return Ok(Detected {
-                transport: Transport::Full(Full::new()),
+                packer: Box::new(packer),
+                unpacker: Box::new(unpacker),
                 preamble: 0,
             });
         }
@@ -93,23 +99,26 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
     }
 
     let mut header: [u8; 64] = buf[..64].try_into().unwrap();
-    let mut cipher = ObfuscatedCipher::new(&header);
+    let mut cipher = ObfuscatedCipher::new_server(&header);
     cipher.decrypt(&mut header);
 
     let inner_tag: [u8; 4] = buf[56..60].try_into().unwrap();
-    let inner = match inner_tag {
-        INTERMEDIATE_TAG => Transport::Intermediate(Intermediate::new()),
-        ABRIDGED_TAG => Transport::Abridged(Abridged::new()),
-        PADDED_INTERMEDIATE_TAG => return Err(DetectError::Unsupported),
+    let (packer, unpacker): (Box<dyn Packer>, Box<dyn Unpacker>) = match inner_tag {
+        INTERMEDIATE_TAG => {
+            let (packer, unpacker) = Obfuscated::new(Intermediate::new(), cipher);
+            (Box::new(packer), Box::new(unpacker))
+        }
+        ABRIDGED_TAG => {
+            let (packer, unpacker) = Obfuscated::new(Abridged::new(), cipher);
+            (Box::new(packer), Box::new(unpacker))
+        }
+        // PADDED_INTERMEDIATE_TAG => return Err(DetectError::Unsupported),
         _ => return Err(DetectError::Unsupported),
     };
 
     Ok(Detected {
-        transport: Transport::Obfuscated {
-            cipher: Box::new(cipher),
-            inner: Box::new(inner),
-            decrypted: 0,
-        },
+        packer,
+        unpacker,
         preamble: 64,
     })
 }

@@ -843,6 +843,7 @@ name = "servmers-crypto"
 version = "0.1.0"
 dependencies = [
  "aes",
+ "ctr",
  "getrandom",
  "grammers-crypto",
  "sha1",
@@ -854,6 +855,7 @@ name = "servmers-mtproto"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "crc32fast",
  "flate2",
  "grammers-mtproto",
  "grammers-tl-types",

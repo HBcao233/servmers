@@ -1,6 +1,7 @@
-use grammers_mtproto::transport::{Abridged, Full, Intermediate, Transport as _};
-pub use grammers_mtproto::transport::{Error, UnpackedOffset};
-use servmers_crypto::{DequeBuffer, ObfuscatedCipher};
+use grammers_mtproto::transport::{Abridged, Full, Intermediate};
+use servmers_crypto::ObfuscatedCipher;
+
+use super::Transport;
 
 const ABRIDGED_TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 const INTERMEDIATE_TAG: [u8; 4] = [0xee, 0xee, 0xee, 0xee];
@@ -25,76 +26,21 @@ const FORBIDDEN_FIRST_INTS: [&[u8; 4]; 5] = [
     &[0x16, 0x03, 0x01, 0x02], // TLS handshake
 ];
 
-pub enum Transport {
-    Abridged(Abridged),
-    Intermediate(Intermediate),
-    Full(Full),
-    Obfuscated {
-        cipher: Box<ObfuscatedCipher>,
-        inner: Box<Transport>,
-        decrypted: usize,
-    },
-}
-
-impl Transport {
-    pub fn unpack(&mut self, buffer: &mut [u8]) -> Result<UnpackedOffset, Error> {
-        match self {
-            Self::Abridged(t) => t.unpack(buffer),
-            Self::Intermediate(t) => t.unpack(buffer),
-            Self::Full(t) => t.unpack(buffer),
-            Self::Obfuscated {
-                cipher,
-                inner,
-                decrypted,
-            } => {
-                assert!(
-                    buffer.len() >= *decrypted,
-                    "buffer is smaller than what was decrypted"
-                );
-
-                cipher.decrypt(&mut buffer[*decrypted..]);
-                *decrypted = buffer.len();
-
-                match inner.unpack(buffer) {
-                    Ok(offset) => {
-                        *decrypted -= offset.next_offset;
-                        Ok(offset)
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-        }
-    }
-
-    pub fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
-        match self {
-            Self::Abridged(t) => t.pack(buffer),
-            Self::Intermediate(t) => t.pack(buffer),
-            Self::Full(t) => t.pack(buffer),
-            Self::Obfuscated {
-                cipher,
-                inner,
-                decrypted: _,
-            } => {
-                inner.pack(buffer);
-                cipher.encrypt(buffer.as_mut());
-            }
-        }
-    }
-}
-
+/// The error of [`detect`].
 pub enum DetectError {
     NeedMore(usize),
     Unsupported,
 }
 
+/// The result of [`detect`].
 pub struct Detected {
+    /// The result Transport.
     pub transport: Transport,
-    /// need to skip bytes before unpack
+    /// Need to skip bytes before unpack.
     pub preamble: usize,
 }
 
-/// detect transport from packet
+/// Detect transport from inbound bytes.
 pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
     // 1. Abridged: 1 byte tag
     if let Some(&b) = buf.first() {

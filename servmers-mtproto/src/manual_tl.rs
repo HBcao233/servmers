@@ -187,15 +187,15 @@ impl GzipPacked {
         Self { packed_data }
     }
 
-    pub fn decompress(&self) -> Result<Vec<u8>, mtp::DeserializeError> {
+    pub fn decompress(&self) -> Result<Vec<u8>, mtp::Error> {
         let writer = Vec::new();
         let mut decoder = GzDecoder::new(writer);
         decoder
             .write_all(&self.packed_data[..])
-            .map_err(|_| mtp::DeserializeError::DecompressionFailed)?;
+            .map_err(|_| mtp::Error::DecompressionFailed)?;
         decoder
             .finish()
-            .map_err(|_| mtp::DeserializeError::DecompressionFailed)
+            .map_err(|_| mtp::Error::DecompressionFailed)
     }
 }
 

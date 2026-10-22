@@ -1,11 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::mtp::DeserializeError;
+use crate::mtp;
 
 /// Checks a message buffer for common errors
-pub(crate) fn check_message_buffer(message: &[u8]) -> Result<(), DeserializeError> {
+pub(crate) fn check_message_buffer(message: &[u8]) -> Result<(), mtp::Error> {
     if message.len() < 20 {
-        Err(DeserializeError::MessageBufferTooSmall)
+        Err(mtp::Error::MessageBufferTooSmall)
     } else {
         Ok(())
     }

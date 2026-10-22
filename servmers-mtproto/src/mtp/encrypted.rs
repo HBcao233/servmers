@@ -4,28 +4,23 @@ pub use grammers_mtproto::mtp::{
     ENCRYPTED_PACKET_HEADER_LEN, MAX_TRANSPORT_HEADER_LEN, MESSAGE_CONTAINER_HEADER_LEN,
     PLAIN_PACKET_HEADER_LEN,
 };
-use grammers_tl_types::{self as tl, Cursor, Deserializable, Identifiable, Serializable};
-use servmers_crypto::{AuthKey, DequeBuffer, decrypt_data_v2, encrypt_data_v2};
+use grammers_tl_types::{self as tl, Cursor, Deserializable, Identifiable};
+use servmers_crypto::{AuthKey, decrypt_data_v2};
 
-use super::{ClientRequest, DeserializeError};
-use crate::utils::{MsgIdGenerator, StackBuffer};
+use super::{ClientMessage, DecryptedMessages, Error};
+// use crate::utils::StackBuffer;
 use crate::{MsgId, manual_tl};
 
 /// An implementation of the [Mobile Transport Protocol] for ciphertext
 /// (encrypted) messages.
 ///
 /// [Mobile Transport Protocol]: https://core.telegram.org/mtproto
-pub struct Encrypted {
+pub struct Encrypted<'a> {
     /// The Authorization Key used for encryption and decryption.
-    auth_key: AuthKey,
-
-    /// The secure, random identifier for this instance.
-    session_id: i64,
+    auth_key: &'a AuthKey,
 
     /// The current message sequence number.
     sequence: i32,
-
-    msg_id_generator: MsgIdGenerator,
 
     /// Identifiers that need to be acknowledged to the server.
     ///
@@ -42,19 +37,17 @@ pub struct Encrypted {
     compression_threshold: Option<usize>,
 
     /// Temporary deserialization results.
-    deserialization: Vec<ClientRequest>,
+    deserialization: Vec<ClientMessage>,
 
     /// How many messages are there in the buffer.
     msg_count: usize,
 }
 
-impl Encrypted {
-    pub fn new(auth_key: [u8; 256], session_id: i64) -> Self {
+impl<'a> Encrypted<'a> {
+    pub fn new(auth_key: &'a AuthKey) -> Self {
         Self {
-            auth_key: AuthKey::from_bytes(auth_key),
-            session_id,
+            auth_key,
             sequence: 0,
-            msg_id_generator: MsgIdGenerator::new(),
             pending_ack: Vec::new(),
             compression_threshold: crate::DEFAULT_COMPRESSION_THRESHOLD,
             deserialization: Vec::new(),
@@ -62,11 +55,7 @@ impl Encrypted {
         }
     }
 
-    /// The Authorization Key used for encryption and decryption.
-    pub fn auth_key(&self) -> [u8; 256] {
-        self.auth_key.to_bytes()
-    }
-
+    /*
     /// Generates the next sequence number depending on whether
     /// it should be for a content-related query or not.
     fn get_seq_no(&mut self, content_related: bool) -> i32 {
@@ -139,8 +128,9 @@ impl Encrypted {
 
         self.msg_count = 0;
     }
+    */
 
-    fn process_message(&mut self, message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn process_message(&mut self, message: manual_tl::Message) -> Result<(), Error> {
         if message.requires_ack() {
             self.pending_ack.push(message.msg_id);
         }
@@ -163,9 +153,7 @@ impl Encrypted {
             | tl::types::DestroySessionNone::CONSTRUCTOR_ID
             | tl::types::NewSessionCreated::CONSTRUCTOR_ID
             | tl::types::BadMsgNotification::CONSTRUCTOR_ID
-            | tl::types::BadServerSalt::CONSTRUCTOR_ID => {
-                Err(DeserializeError::UnexpectedConstructor { id })
-            }
+            | tl::types::BadServerSalt::CONSTRUCTOR_ID => Err(Error::UnexpectedConstructor { id }),
 
             // Service Messages about Messages
             // Acknowledgment of Receipt
@@ -197,7 +185,7 @@ impl Encrypted {
     }
 
     /// [Acknowledgment of Receipt]: https://core.telegram.org/mtproto/service_messages_about_messages#acknowledgment-of-receipt
-    fn handle_ack(&self, message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_ack(&self, message: manual_tl::Message) -> Result<(), Error> {
         // TODO notify about this somehow
         let _ack = tl::enums::MsgsAck::from_bytes(&message.body)?;
         Ok(())
@@ -214,7 +202,7 @@ impl Encrypted {
     /// ```
     ///
     /// [Request for Message Status Information]: https://core.telegram.org/mtproto/service_messages_about_messages#request-for-message-status-information
-    fn handle_state_req(&self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_state_req(&self, _message: manual_tl::Message) -> Result<(), Error> {
         // TODO implement
         Ok(())
     }
@@ -255,7 +243,7 @@ impl Encrypted {
     /// valid, the message is to be wrapped in `msg_copy`).
     ///
     /// [Informational Message regarding Status of Messages]: https://core.telegram.org/mtproto/service_messages_about_messages#informational-message-regarding-status-of-messages
-    fn handle_state_info(&mut self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_state_info(&mut self, _message: manual_tl::Message) -> Result<(), Error> {
         // TODO implement
         Ok(())
     }
@@ -277,7 +265,7 @@ impl Encrypted {
     /// This message does not require an acknowledgment.
     ///
     /// [Voluntary Communication of Status of Messages]: https://core.telegram.org/mtproto/service_messages_about_messages#voluntary-communication-of-status-of-messages
-    fn handle_msg_all(&mut self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_msg_all(&mut self, _message: manual_tl::Message) -> Result<(), Error> {
         // TODO implement
         Ok(())
     }
@@ -305,10 +293,7 @@ impl Encrypted {
     /// This message does not require an acknowledgment.
     ///
     /// [Extended Voluntary Communication of Status of One Message]: https://core.telegram.org/mtproto/service_messages_about_messages#extended-voluntary-communication-of-status-of-one-message
-    fn handle_detailed_info(
-        &mut self,
-        message: manual_tl::Message,
-    ) -> Result<(), DeserializeError> {
+    fn handle_detailed_info(&mut self, message: manual_tl::Message) -> Result<(), Error> {
         // TODO https://github.com/telegramdesktop/tdesktop/blob/8f82880b938e06b7a2a27685ef9301edb12b4648/Telegram/SourceFiles/mtproto/connection.cpp#L1790-L1820
         // TODO https://github.com/telegramdesktop/tdesktop/blob/8f82880b938e06b7a2a27685ef9301edb12b4648/Telegram/SourceFiles/mtproto/connection.cpp#L1822-L1845
         let msg_detailed = tl::enums::MsgDetailedInfo::from_bytes(&message.body)?;
@@ -351,7 +336,7 @@ impl Encrypted {
     ///
     /// [Explicit Request to Re-Send Answers]: https://core.telegram.org/mtproto/service_messages_about_messages#explicit-request-to-re-send-answers
     /// [Explicit Request to Re-Send Messages]: https://core.telegram.org/mtproto/service_messages_about_messages#explicit-request-to-re-send-messages
-    fn handle_msg_resend(&self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_msg_resend(&self, _message: manual_tl::Message) -> Result<(), Error> {
         // TODO implement
         // `msg_resend_ans_req` seems to never occur (it was even missing from `mtproto.tl`)
         Ok(())
@@ -394,7 +379,7 @@ impl Encrypted {
     ///
     /// [Containers]: https://core.telegram.org/mtproto/service_messages#containers
     /// [Simple Container]: https://core.telegram.org/mtproto/service_messages#simple-container
-    fn handle_container(&mut self, message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_container(&mut self, message: manual_tl::Message) -> Result<(), Error> {
         let container = manual_tl::MessageContainer::from_bytes(&message.body)?;
         for inner_message in container.messages {
             self.process_message(inner_message)?;
@@ -423,7 +408,7 @@ impl Encrypted {
     /// in a simple container with the same result.
     ///
     /// [Message Copies]: https://core.telegram.org/mtproto/service_messages#message-copies
-    fn handle_msg_copy(&self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_msg_copy(&self, _message: manual_tl::Message) -> Result<(), Error> {
         panic!("msg_copy should not be used")
     }
 
@@ -443,7 +428,7 @@ impl Encrypted {
     /// client to server.
     ///
     /// [Packed Object]: https://core.telegram.org/mtproto/service_messages#packed-object
-    fn handle_gzip_packed(&mut self, message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_gzip_packed(&mut self, message: manual_tl::Message) -> Result<(), Error> {
         let container = manual_tl::GzipPacked::from_bytes(&message.body)?;
         self.process_message(manual_tl::Message {
             body: container.decompress()?,
@@ -498,7 +483,7 @@ impl Encrypted {
     /// to ping time.
     ///
     /// [HTTP Wait/Long Poll]: https://core.telegram.org/mtproto/service_messages#http-wait-long-poll
-    fn handle_http_wait(&mut self, _message: manual_tl::Message) -> Result<(), DeserializeError> {
+    fn handle_http_wait(&mut self, _message: manual_tl::Message) -> Result<(), Error> {
         // TODO implement
         Ok(())
     }
@@ -507,8 +492,8 @@ impl Encrypted {
     ///
     /// Since we handle all the possible service messages, we can
     /// safely treat whatever message body we received as `Requests`.
-    fn handle_request(&mut self, message: manual_tl::Message) -> Result<(), DeserializeError> {
-        self.deserialization.push(ClientRequest {
+    fn handle_request(&mut self, message: manual_tl::Message) -> Result<(), Error> {
+        self.deserialization.push(ClientMessage {
             msg_id: MsgId(message.msg_id),
             body: message.body,
         });
@@ -516,37 +501,30 @@ impl Encrypted {
     }
 }
 
-impl Encrypted {
-    pub(super) fn deserialize(
-        &mut self,
-        payload: &mut [u8],
-    ) -> Result<Vec<ClientRequest>, DeserializeError> {
+impl<'a> Encrypted<'a> {
+    pub fn deserialize(&mut self, payload: &mut [u8]) -> Result<DecryptedMessages, Error> {
         crate::utils::check_message_buffer(payload)?;
 
-        let plaintext = decrypt_data_v2(payload, &self.auth_key)?;
+        let plaintext = decrypt_data_v2(payload, self.auth_key)?;
 
         let mut buffer = Cursor::from_slice(plaintext);
 
-        // TODO: verify salt and returns BadServerSalt if salt is invalid.
-        let _salt = i64::deserialize(&mut buffer)?;
-
-        // TODO: verify session_id.
+        let salt = i64::deserialize(&mut buffer)?;
         let session_id = i64::deserialize(&mut buffer)?;
-        /*if session_id != self.session_id {
-            return Err(DeserializeError::BadSessionId {
-                got: session_id,
-                expected: self.session_id,
-            });
-        }*/
 
         self.process_message(manual_tl::Message::deserialize(&mut buffer)?)?;
 
         // For simplicity, and to avoid passing too much stuff around (RPC results, updates),
         // the processing result is stored in self. After processing is done, that temporary
         // state is cleaned and returned with `mem::take`.
-        Ok(mem::take(&mut self.deserialization))
+        Ok(DecryptedMessages {
+            salt,
+            session_id,
+            messages: mem::take(&mut self.deserialization),
+        })
     }
 
+    /*
     pub(super) fn push(&mut self, buffer: &mut DequeBuffer<u8>, response: &[u8]) -> Option<MsgId> {
         // TODO rather than taking in bytes, take requests, serialize them in place, and if too large drop the last part of the buffer
 
@@ -609,4 +587,5 @@ impl Encrypted {
             Some(MsgId(self.msg_id_generator.last_msg_id as i64))
         }
     }
+    */
 }

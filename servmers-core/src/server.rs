@@ -61,9 +61,9 @@ impl Server {
             tokio::spawn(async move {
                 let _permit = permit;
 
-                match handle_connection(stream, addr).await {
-                    Ok(()) => {},
-                    Err(e) => warn!(%addr, "connection failed: {e}"),
+                match handle_connection(stream, addr, auth_keys).await {
+                    Ok(()) => {}
+                    Err(e) => warn!(%addr, "{e}"),
                 }
             });
         }

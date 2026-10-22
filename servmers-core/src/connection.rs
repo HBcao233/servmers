@@ -1,14 +1,15 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use bytes::BytesMut;
-use servmers_mtproto::decode::{Decoder, Drive, Payload};
 use servmers_mtproto::mtp;
+use servmers_mtproto::transport::{Drive, TransportDriver};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, instrument, trace, warn};
 
-use crate::errors::ReadError;
+use crate::errors::ConnectionError;
 use crate::server::AuthKeyCache;
 
 /// After how many seconds should the server close the connection when we send a ping?
@@ -36,16 +37,20 @@ const INITIAL_CAPACITY: usize = 8 * 1024;
 /// kilobytes to the maximum data size.
 pub const MAX_FRAME_BYTES: usize = (1024 * 1024) + (8 * 1024);
 
-#[instrument(skip(stream))]
-pub async fn handle_connection(stream: TcpStream, addr: SocketAddr) -> Result<(), ReadError> {
+#[instrument(skip(stream, auth_keys))]
+pub async fn handle_connection(
+    stream: TcpStream,
+    addr: SocketAddr,
+    auth_keys: Arc<AuthKeyCache>,
+) -> Result<(), ConnectionError> {
     let (mut reader, mut writer) = stream.into_split();
-    let mut decoder = Decoder::new();
+    let mut driver = TransportDriver::new();
     let mut read_buffer = BytesMut::with_capacity(INITIAL_CAPACITY);
-    let mut payloads = Vec::new();
+    let mut packets = Vec::new();
 
     loop {
         loop {
-            match decoder.drive(&mut read_buffer, &mut payloads) {
+            match driver.drive(&mut read_buffer, &mut packets) {
                 Ok(Drive::Progress) => {}
                 Ok(Drive::NeedMore) => break,
                 Err(e) => {
@@ -55,11 +60,11 @@ pub async fn handle_connection(stream: TcpStream, addr: SocketAddr) -> Result<()
             }
         }
 
-        on_payloads(&mut payloads);
+        on_packets(&mut packets, Arc::clone(&auth_keys))?;
 
         if read_buffer.len() > MAX_FRAME_BYTES {
             warn!(len = read_buffer.len(), "recv buffer overflow",);
-            return Err(ReadError::Overflow);
+            return Err(ConnectionError::Overflow);
         }
 
         match timeout(IDLE_TIMEOUT, reader.read_buf(&mut read_buffer)).await {
@@ -81,38 +86,29 @@ pub async fn handle_connection(stream: TcpStream, addr: SocketAddr) -> Result<()
     Ok(())
 }
 
-/*
-/// Handle `n` more read bytes being ready to process by the transport.
-///
-/// This won't cause `ReadError::Io`, but yet another enum would be overkill.
-fn on_net_read(&mut self, n: usize) -> Result<Vec<ClientRequest>, ReadError> {
-    if n == 0 {
-        return Err(ReadError::Io(io::Error::new(
-            io::ErrorKind::ConnectionReset,
-            "read 0 bytes",
-        )));
+fn on_packets(
+    packets: &mut Vec<BytesMut>,
+    auth_keys: Arc<AuthKeyCache>,
+) -> Result<(), ConnectionError> {
+    for mut packet in packets.drain(..) {
+        if packet.len() < 8 {
+            return Err(ConnectionError::Mtp(mtp::Error::MessageBufferTooSmall));
+        }
+
+        if &packet[..8] == &[0; 8] {
+            let messages = mtp::Plain::deserialize(&mut packet)?;
+            info!(?messages);
+        } else {
+            let auth_key_id = packet[..8].try_into().unwrap();
+            let auth_key = auth_keys.get(&auth_key_id).expect("TODO");
+            let mtp::DecryptedMessages {
+                salt,
+                session_id,
+                messages,
+            } = mtp::Encrypted::new(&auth_key).deserialize(&mut packet)?;
+            info!(salt, session_id, ?messages);
+        }
     }
 
-    self.read_tail += n;
-    trace!("read {} bytes from the network", n);
-    trace!("trying to unpack buffer of {} bytes...", self.read_tail);
-
-    // TODO the buffer might have multiple transport packets, what should happen with the
-    // updates successfully read if subsequent packets fail to be deserialized properly?
-    let mut requests = Vec::new();
-    let mut next_offset = 0;
-    while next_offset != self.read_tail {
-
-    }
-
-    self.read_buffer.copy_within(next_offset..self.read_tail, 0);
-    self.read_tail -= next_offset;
-
-    Ok(requests)
-}*/
-
-fn on_payloads(payloads: &mut Vec<Payload>) {
-    for payload in payloads.drain(..) {
-        info!(?payload);
-    }
+    Ok(())
 }

@@ -1,9 +1,7 @@
-use grammers_tl_types::{Cursor, Deserializable, Serializable};
-use servmers_crypto::DequeBuffer;
+use grammers_tl_types::{Cursor, Deserializable};
 
-use super::{ClientRequest, DeserializeError};
+use super::{ClientMessage, Error};
 use crate::MsgId;
-use crate::utils::MsgIdGenerator;
 
 /// An implementation of the [Mobile Transport Protocol] for plaintext
 /// (unencrypted) messages.
@@ -20,37 +18,15 @@ use crate::utils::MsgIdGenerator;
 /// so being able to keep a simpler implementation separate is a bonus.
 ///
 /// [Mobile Transport Protocol]: https://core.telegram.org/mtproto
-pub struct Plain {
-    msg_id_generator: MsgIdGenerator,
-}
-
-impl Plain {
-    /// Creates a new instance of the plain (unencrypted) MTP.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            msg_id_generator: MsgIdGenerator::new(),
-        }
-    }
-}
+pub struct Plain;
 
 impl Plain {
     /// Validates that the returned data is a correct plain message, and
     /// if it is, the method returns the inner contents of the message.
-    pub(super) fn deserialize(
-        &mut self,
-        payload: &mut [u8],
-    ) -> Result<Vec<ClientRequest>, DeserializeError> {
+    pub fn deserialize(payload: &mut [u8]) -> Result<Vec<ClientMessage>, Error> {
         crate::utils::check_message_buffer(payload)?;
 
         let mut buf = Cursor::from_slice(payload);
-        let auth_key_id = i64::deserialize(&mut buf)?;
-        if auth_key_id != 0 {
-            return Err(DeserializeError::BadAuthKey {
-                got: auth_key_id,
-                expected: 0,
-            });
-        }
 
         let msg_id = i64::deserialize(&mut buf)?;
         // We can't validate it's close to our system time because our sytem
@@ -60,26 +36,27 @@ impl Plain {
         // > Client message identifiers are divisible by 4
         // https://core.telegram.org/mtproto/description#message-identifier-msg-id
         if msg_id < 0 || (msg_id % 4) != 0 {
-            return Err(DeserializeError::BadMessageId { got: msg_id });
+            return Err(Error::BadMessageId { got: msg_id });
         }
 
         let len = i32::deserialize(&mut buf)?;
         if len <= 0 {
-            return Err(DeserializeError::NegativeMessageLength { got: len });
+            return Err(Error::NegativeMessageLength { got: len });
         }
         if (20 + len) as usize > payload.len() {
-            return Err(DeserializeError::TooLongMessageLength {
+            return Err(Error::TooLongMessageLength {
                 got: len as usize,
                 max_length: payload.len() - 20,
             });
         }
 
-        Ok(vec![ClientRequest {
+        Ok(vec![ClientMessage {
             msg_id: MsgId(msg_id),
             body: payload[20..20 + len as usize].into(),
         }])
     }
 
+    /*
     /// Wraps a response's data into a plain message (also known as
     /// [unencrypted messages]), and returns its serialized contents.
     ///
@@ -107,4 +84,5 @@ impl Plain {
     pub(super) fn finalize(&mut self, buffer: &mut DequeBuffer<u8>) -> Option<MsgId> {
         (!buffer.is_empty()).then_some(MsgId(self.msg_id_generator.last_msg_id as i64))
     }
+    */
 }

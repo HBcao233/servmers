@@ -56,7 +56,7 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
         return Err(DetectError::NeedMore(1));
     }
 
-    // 2. Intermediate / Padded intermediate: 4 bytes tag
+    // 2. Intermediate: 4 bytes tag
     if buf.len() < 4 {
         return Err(DetectError::NeedMore(4));
     }
@@ -68,27 +68,32 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
             preamble: 4,
         });
     }
+
+    // 3. Padded intermediate
     if buf[..4] == PADDED_INTERMEDIATE_TAG {
         return Err(DetectError::Unsupported);
     }
 
-    // 3. Full: suitable len and seq == 0
+    // 4. Full: seq == 0 and len is suitable
     if buf.len() >= 8 {
-        let len = i32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let seq = i32::from_le_bytes(buf[4..8].try_into().unwrap());
-        if (12..=MAX_PACKET_LEN).contains(&len) && len % 4 == 0 && seq == 0 {
-            let (packer, unpacker) = Full::new().into_split();
-            return Ok(Detected {
-                packer: Box::new(packer),
-                unpacker: Box::new(unpacker),
-                preamble: 0,
-            });
+        if buf[4..8] == [0; 4] {
+            let len = i32::from_le_bytes(buf[0..4].try_into().unwrap());
+            return if (12..=MAX_PACKET_LEN).contains(&len) && len % 4 == 0 {
+                let (packer, unpacker) = Full::new().into_split();
+                Ok(Detected {
+                    packer: Box::new(packer),
+                    unpacker: Box::new(unpacker),
+                    preamble: 0,
+                })
+            } else {
+                Err(DetectError::Unsupported)
+            };
         }
     } else {
         return Err(DetectError::NeedMore(8));
     }
 
-    // 4. Obfuscated
+    // 5. Obfuscated
     for http in FORBIDDEN_FIRST_INTS {
         if buf.starts_with(http) {
             return Err(DetectError::Unsupported);
@@ -102,7 +107,7 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
     let mut cipher = ObfuscatedCipher::new_server(&header);
     cipher.decrypt(&mut header);
 
-    let inner_tag: [u8; 4] = buf[56..60].try_into().unwrap();
+    let inner_tag: [u8; 4] = header[56..60].try_into().unwrap();
     let (packer, unpacker): (Box<dyn Packer>, Box<dyn Unpacker>) = match inner_tag {
         INTERMEDIATE_TAG => {
             let (packer, unpacker) = Obfuscated::new(Intermediate::new(), cipher).into_split();
@@ -112,7 +117,7 @@ pub fn detect(buf: &[u8]) -> Result<Detected, DetectError> {
             let (packer, unpacker) = Obfuscated::new(Abridged::new(), cipher).into_split();
             (Box::new(packer), Box::new(unpacker))
         }
-        // PADDED_INTERMEDIATE_TAG => return Err(DetectError::Unsupported),
+        PADDED_INTERMEDIATE_TAG => return Err(DetectError::Unsupported),
         _ => return Err(DetectError::Unsupported),
     };
 

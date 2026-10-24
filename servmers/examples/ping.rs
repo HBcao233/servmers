@@ -26,7 +26,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("127.0.0.1:{}", PORT);
 
     let mut sender = connect_with_auth(
-        transport::Full::new(),
+        transport::Obfuscated::new(transport::Abridged::new()),
         grammers_mtsender::ServerAddr::Tcp {
             address: std::net::SocketAddr::from_str(&addr).unwrap(),
         },

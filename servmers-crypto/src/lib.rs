@@ -17,36 +17,9 @@ mod auth_key;
 mod obfuscated;
 mod sha;
 
-use std::fmt;
-
 pub use auth_key::AuthKey;
-pub use grammers_crypto::{DequeBuffer, aes};
+pub use grammers_crypto::{DequeBuffer, Error, aes};
 pub use obfuscated::{ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor};
-
-/// The error type for [`decrypt_data_v2`].
-#[derive(Clone, Debug, PartialEq)]
-pub enum Error {
-    /// The ciphertext is either too small or not padded correctly.
-    InvalidBuffer,
-
-    /// The server replied with the ID of a different authorization key.
-    AuthKeyMismatch,
-
-    /// The key of the message did not match our expectations.
-    MessageKeyMismatch,
-}
-
-impl std::error::Error for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Error::InvalidBuffer => write!(f, "invalid ciphertext buffer length"),
-            Error::AuthKeyMismatch => write!(f, "server authkey mismatches with ours"),
-            Error::MessageKeyMismatch => write!(f, "server msgkey mismatches with ours"),
-        }
-    }
-}
 
 enum Side {
     Client,

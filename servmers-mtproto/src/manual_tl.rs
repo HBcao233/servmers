@@ -89,10 +89,7 @@ impl Deserializable for Message {
 /// ```tl
 /// rpc_result#f35c6d01 req_msg_id:long result:Object = RpcResult;
 /// ```
-pub struct RpcResult {
-    pub req_msg_id: i64,
-    pub result: Vec<u8>,
-}
+pub(crate) struct RpcResult;
 
 impl Identifiable for RpcResult {
     const CONSTRUCTOR_ID: u32 = 0xf35c6d01;

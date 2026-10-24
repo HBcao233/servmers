@@ -10,6 +10,8 @@ pub enum ConnectionError {
     Timeout,
     /// Overflow
     Overflow,
+    /// Expected an encrypted packet, but got a plain packet.
+    InvalidPacket,
     /// No authentication.
     Forbidden,
     /// Standard I/O error.
@@ -30,6 +32,7 @@ impl Clone for ConnectionError {
             Self::Timeout => Self::Timeout,
             Self::Overflow => Self::Overflow,
             Self::Forbidden => Self::Forbidden,
+            Self::InvalidPacket => Self::InvalidPacket,
             Self::Io(e) => Self::Io(
                 e.raw_os_error()
                     .map(io::Error::from_raw_os_error)
@@ -48,6 +51,7 @@ impl fmt::Display for ConnectionError {
             Self::Timeout => write!(f, "connection timeout"),
             Self::Overflow => write!(f, "read buffer overflow"),
             Self::Forbidden => write!(f, "no authentication"),
+            Self::InvalidPacket => write!(f, "invalid packet"),
             Self::Io(err) => write!(f, "connection error, IO failed: {err}"),
             Self::UnsupportedTransport => write!(f, "connection error, unsupported transport"),
             Self::Transport(err) => write!(f, "connection error, transport-level: {err}"),

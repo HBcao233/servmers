@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
 use servmers_crypto::DequeBuffer;
-use servmers_mtproto::mtp;
+use servmers_mtproto::mtp::{
+    self, ClientMessages, DecryptedMessages, Mtp, Outbound,
+};
 use servmers_mtproto::transport::{
     Drive, NegotiateError, NegotiateResult, Packer, TransportDriver,
 };
@@ -59,42 +61,39 @@ pub async fn handle_connection(
     let packer = 'outer: loop {
         loop {
             match driver.negotiate(&mut read_buffer) {
-                Ok(NegotiateResult::Negotiated { packer }) => break 'outer Ok(packer),
+                Ok(NegotiateResult::Negotiated { packer }) => break 'outer packer,
                 Ok(NegotiateResult::NeedMore) => break,
                 Err(NegotiateError::UnsupportedTransport) => {
-                    break 'outer Err(ConnectionError::UnsupportedTransport);
+                    return Err(ConnectionError::UnsupportedTransport);
                 }
             }
         }
 
         if read_buffer.len() > MAX_FRAME_BYTES {
             warn!(len = read_buffer.len(), "recv buffer overflow");
-            break Err(ConnectionError::Overflow);
+            return Err(ConnectionError::Overflow);
         }
 
         match timeout(HANDSHAKE_TIMEOUT, reader.read_buf(&mut read_buffer)).await {
             Err(_) => {
                 debug!("handshake timeout");
-                break Err(ConnectionError::Timeout);
+                return Err(ConnectionError::Timeout);
             }
             Ok(Ok(0)) => {
-                break Err(ConnectionError::Io(
+                return Err(ConnectionError::Io(
                     std::io::ErrorKind::ConnectionReset.into(),
                 ));
             }
             Ok(Ok(n)) => {
                 trace!(n, "read");
             }
-            Ok(Err(e)) => break Err(e.into()),
+            Ok(Err(e)) => return Err(e.into()),
         }
-    };
-    let packer = match packer {
-        Ok(packer) => packer,
-        Err(e) => return Err(e),
     };
 
     let (write_tx, write_rx) = mpsc::channel(100);
-    let write_task = tokio::task::spawn(write_loop(writer, write_rx, packer));
+    let mtp = Arc::new(Mutex::new(Mtp::new()));
+    let write_task = tokio::task::spawn(write_loop(writer, write_rx, packer, Arc::clone(&mtp)));
 
     let result = 'outer: loop {
         loop {
@@ -107,7 +106,9 @@ pub async fn handle_connection(
             }
         }
 
-        on_packets(&mut packets, Arc::clone(&auth_keys))?;
+        if let Err(e) = on_packets(&mut packets, Arc::clone(&auth_keys), &write_tx, &mtp) {
+            break Err(e);
+        }
 
         if read_buffer.len() > MAX_FRAME_BYTES {
             warn!(len = read_buffer.len(), "recv buffer overflow");
@@ -130,29 +131,50 @@ pub async fn handle_connection(
     write_task.abort();
     let _ = write_task.await;
     info!("connection closed");
+
     result
 }
 
 fn on_packets(
     packets: &mut Vec<BytesMut>,
     auth_keys: Arc<AuthKeyCache>,
+    write_tx: &mpsc::Sender<Outbound>,
+    mtp: &Mutex<Mtp>,
 ) -> Result<(), ConnectionError> {
+    let mut guard = mtp.lock().unwrap();
+    let mut is_auth_key_configured = guard.is_auth_key_configured();
+
     for mut packet in packets.drain(..) {
         if packet.len() < 8 {
             return Err(ConnectionError::Mtp(mtp::Error::MessageBufferTooSmall));
         }
 
         if &packet[..8] == &[0; 8] {
-            let messages = mtp::Plain::deserialize(&mut packet)?;
+            if is_auth_key_configured {
+                return Err(ConnectionError::InvalidPacket);
+            }
+
+            let messages = guard.deserialize(&mut packet)?;
             info!(?messages);
         } else {
             let auth_key_id = packet[..8].try_into().unwrap();
             let auth_key = auth_keys.get(&auth_key_id).expect("TODO");
-            let mtp::DecryptedMessages {
+            if !is_auth_key_configured {
+                guard.set_auth_key(auth_key.clone());
+                is_auth_key_configured = true;
+            }
+
+            let ClientMessages::Encrypted(DecryptedMessages {
                 salt,
                 session_id,
                 messages,
-            } = mtp::Encrypted::new(&auth_key).deserialize(&mut packet)?;
+            }) = guard.deserialize(&mut packet)?
+            else {
+                return Err(ConnectionError::InvalidPacket);
+            };
+
+            guard.set_session_id(session_id)?;
+
             info!(salt, session_id, ?messages);
         }
     }
@@ -162,22 +184,26 @@ fn on_packets(
 
 async fn write_loop(
     mut writer: OwnedWriteHalf,
-    rx: mpsc::Receiver<Outbound>,
-    packer: Box<dyn Packer>,
+    mut rx: mpsc::Receiver<Outbound>,
+    mut packer: Box<dyn Packer>,
+    mtp: Arc<Mutex<Mtp>>,
 ) -> Result<(), ConnectionError> {
-    let buf: DequeBuffer<u8> = DequeBuffer::with_capacity(INITIAL_CAPACITY, LEADING_BUFFER_SPACE);
-    let peeked = None;
+    let mut buf: DequeBuffer<u8> =
+        DequeBuffer::with_capacity(INITIAL_CAPACITY, LEADING_BUFFER_SPACE);
 
     while let Some(first) = rx.recv().await {
-        push(first, &mut buf);
-        while let Ok(next) = rx.try_recv() {
-            if buf.len() > MAX_FRAME_BYTES / 2 {
-                break;
+        {
+            let mut guard = mtp.lock().unwrap();
+            guard.push(&mut buf, first);
+            while let Ok(next) = rx.try_recv() {
+                if buf.len() > MAX_FRAME_BYTES / 2 {
+                    break;
+                }
+                guard.push(&mut buf, next);
             }
-            push(&next, &mut buf)?;
-        }
 
-        finishize(&mut buf);
+            guard.finalize(&mut buf);
+        }
 
         packer.pack(&mut buf);
 

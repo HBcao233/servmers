@@ -28,8 +28,13 @@ use super::{Error, IntoSplit, Packer, Tagged, UnpackedOffset, Unpacker};
 ///
 /// See [Transport Obfuscation](https://core.telegram.org/mtproto/mtproto-transports#transport-obfuscation)
 /// for more information.
-pub struct Obfuscated<T> {
-    inner: T,
+pub struct Obfuscated<T>
+where
+    T: IntoSplit,
+    T::PackerHalf: Tagged,
+{
+    packer: ObfuscatedPacker<T::PackerHalf>,
+    unpacker: ObfuscatedUnpacker<T::UnpackerHalf>,
 }
 
 pub struct ObfuscatedPacker<T: Packer + Tagged> {
@@ -48,27 +53,54 @@ where
     T: IntoSplit,
     T::PackerHalf: Tagged,
 {
-    pub fn new(
-        inner: T,
-        cipher: ObfuscatedCipher,
-    ) -> (
-        ObfuscatedPacker<T::PackerHalf>,
-        ObfuscatedUnpacker<T::UnpackerHalf>,
-    ) {
+    pub fn new(inner: T, cipher: ObfuscatedCipher) -> Self {
         let (packer, unpacker) = inner.into_split();
         let (encryptor, decryptor) = cipher.into_split();
 
-        (
-            ObfuscatedPacker {
+        Self {
+            packer: ObfuscatedPacker {
                 inner: packer,
                 cipher: encryptor,
             },
-            ObfuscatedUnpacker {
+            unpacker: ObfuscatedUnpacker {
                 inner: unpacker,
                 cipher: decryptor,
                 decrypt_tail: 0,
             },
-        )
+        }
+    }
+}
+
+impl<T> Packer for Obfuscated<T>
+where
+    T: IntoSplit,
+    T::PackerHalf: Tagged,
+{
+    fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
+        self.packer.pack(buffer);
+    }
+}
+
+impl<T> Unpacker for Obfuscated<T>
+where
+    T: IntoSplit,
+    T::PackerHalf: Tagged,
+{
+    fn unpack(&mut self, buffer: &mut [u8]) -> Result<UnpackedOffset, Error> {
+        self.unpacker.unpack(buffer)
+    }
+}
+
+impl<T> IntoSplit for Obfuscated<T>
+where
+    T: IntoSplit,
+    T::PackerHalf: Tagged,
+{
+    type PackerHalf = ObfuscatedPacker<T::PackerHalf>;
+    type UnpackerHalf = ObfuscatedUnpacker<T::UnpackerHalf>;
+
+    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
+        (self.packer, self.unpacker)
     }
 }
 

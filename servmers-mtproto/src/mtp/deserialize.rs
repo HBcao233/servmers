@@ -11,7 +11,7 @@ impl Mtp {
         crate::utils::check_message_buffer(payload)?;
 
         if let Some(ref auth_key) = self.auth_key {
-            let plaintext = decrypt_data_v2(payload, &auth_key)?;
+            let plaintext = decrypt_data_v2(payload, auth_key)?;
 
             let mut buffer = Cursor::from_slice(plaintext);
 

@@ -47,11 +47,36 @@ pub struct AbridgedPacker;
 /// See [`Abridged`].
 pub struct AbridgedUnpacker;
 
-#[allow(clippy::new_without_default)]
 impl Abridged {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self
     }
+}
+
+impl Packer for Abridged {
+    fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
+        AbridgedPacker.pack(buffer);
+    }
+}
+
+impl Unpacker for Abridged {
+    fn unpack(&mut self, buffer: &mut [u8]) -> Result<UnpackedOffset, Error> {
+        AbridgedUnpacker.unpack(buffer)
+    }
+}
+
+impl IntoSplit for Abridged {
+    type PackerHalf = AbridgedPacker;
+    type UnpackerHalf = AbridgedUnpacker;
+
+    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
+        (AbridgedPacker, AbridgedUnpacker)
+    }
+}
+
+impl Tagged for AbridgedPacker {
+    const TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 }
 
 impl Packer for AbridgedPacker {
@@ -110,19 +135,6 @@ impl Unpacker for AbridgedUnpacker {
             next_offset: header_len + len,
         })
     }
-}
-
-impl IntoSplit for Abridged {
-    type PackerHalf = AbridgedPacker;
-    type UnpackerHalf = AbridgedUnpacker;
-
-    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
-        (AbridgedPacker, AbridgedUnpacker)
-    }
-}
-
-impl Tagged for AbridgedPacker {
-    const TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 }
 
 #[cfg(test)]

@@ -101,7 +101,7 @@ impl TransportDriver {
 
                 out.push(packet);
 
-                return Ok(Drive::Progress);
+                Ok(Drive::Progress)
             }
         }
     }

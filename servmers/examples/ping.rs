@@ -5,7 +5,6 @@ use std::time::Duration;
 use grammers_mtproto::transport;
 use grammers_mtsender::connect_with_auth;
 use grammers_tl_types::functions;
-use tokio::net::TcpStream;
 
 const PORT: u16 = 2391;
 
@@ -25,7 +24,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_key = load_auth_key()?;
 
     let addr = format!("127.0.0.1:{}", PORT);
-    let mut stream = TcpStream::connect(&addr).await?;
+
     let mut sender = connect_with_auth(
         transport::Full::new(),
         grammers_mtsender::ServerAddr::Tcp {
@@ -36,24 +35,23 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("connected");
 
-    for i in 0..2 {
-        println!("\n-> ping #{i}");
+    println!("\n-> ping");
 
-        let response = sender.invoke(&functions::Ping { ping_id: i }).await;
+    let response = sender.invoke(&functions::Ping { ping_id: 0 }).await;
 
-        println!("  <- got {:?}", response);
+    println!("  <- got {:?}", response);
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
     Ok(())
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().init();
 
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async_main());
+        .block_on(async_main())
 }

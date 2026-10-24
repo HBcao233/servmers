@@ -75,7 +75,7 @@ impl Mtp {
             if buffer.is_empty() {
                 None
             } else {
-                encrypt_data_v2(buffer, &self.auth_key.as_ref().unwrap());
+                encrypt_data_v2(buffer, self.auth_key.as_ref().unwrap());
                 Some(MsgId(self.last_msg_id as i64))
             }
         } else {

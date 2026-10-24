@@ -38,11 +38,36 @@ pub struct IntermediatePacker;
 /// See [`Intermediate`].
 pub struct IntermediateUnpacker;
 
-#[allow(clippy::new_without_default)]
 impl Intermediate {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self
     }
+}
+
+impl Packer for Intermediate {
+    fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
+        IntermediatePacker.pack(buffer);
+    }
+}
+
+impl Unpacker for Intermediate {
+    fn unpack(&mut self, buffer: &mut [u8]) -> Result<UnpackedOffset, Error> {
+        IntermediateUnpacker.unpack(buffer)
+    }
+}
+
+impl IntoSplit for Intermediate {
+    type PackerHalf = IntermediatePacker;
+    type UnpackerHalf = IntermediateUnpacker;
+
+    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
+        (IntermediatePacker, IntermediateUnpacker)
+    }
+}
+
+impl Tagged for IntermediatePacker {
+    const TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 }
 
 impl Packer for IntermediatePacker {
@@ -82,19 +107,6 @@ impl Unpacker for IntermediateUnpacker {
             next_offset: 4 + len,
         })
     }
-}
-
-impl IntoSplit for Intermediate {
-    type PackerHalf = IntermediatePacker;
-    type UnpackerHalf = IntermediateUnpacker;
-
-    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
-        (IntermediatePacker, IntermediateUnpacker)
-    }
-}
-
-impl Tagged for IntermediatePacker {
-    const TAG: [u8; 4] = [0xef, 0xef, 0xef, 0xef];
 }
 
 #[cfg(test)]

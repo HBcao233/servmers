@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
 use servmers_crypto::DequeBuffer;
-use servmers_mtproto::mtp::{
-    self, ClientMessages, DecryptedMessages, Mtp, Outbound,
-};
+use servmers_mtproto::mtp::{self, ClientMessages, DecryptedMessages, Mtp, Outbound};
 use servmers_mtproto::transport::{
     Drive, NegotiateError, NegotiateResult, Packer, TransportDriver,
 };
@@ -52,20 +50,18 @@ pub async fn handle_connection(
     addr: SocketAddr,
     auth_keys: Arc<AuthKeyCache>,
 ) -> Result<(), ConnectionError> {
-    let (mut reader, mut writer) = stream.into_split();
+    let (mut reader, writer) = stream.into_split();
     let mut driver = TransportDriver::new();
 
     let mut read_buffer = BytesMut::with_capacity(INITIAL_CAPACITY);
     let mut packets = Vec::new();
 
-    let packer = 'outer: loop {
-        loop {
-            match driver.negotiate(&mut read_buffer) {
-                Ok(NegotiateResult::Negotiated { packer }) => break 'outer packer,
-                Ok(NegotiateResult::NeedMore) => break,
-                Err(NegotiateError::UnsupportedTransport) => {
-                    return Err(ConnectionError::UnsupportedTransport);
-                }
+    let packer = loop {
+        match driver.negotiate(&mut read_buffer) {
+            Ok(NegotiateResult::Negotiated { packer }) => break packer,
+            Ok(NegotiateResult::NeedMore) => {}
+            Err(NegotiateError::UnsupportedTransport) => {
+                return Err(ConnectionError::UnsupportedTransport);
             }
         }
 
@@ -149,13 +145,16 @@ fn on_packets(
             return Err(ConnectionError::Mtp(mtp::Error::MessageBufferTooSmall));
         }
 
-        if &packet[..8] == &[0; 8] {
+        if packet[..8] == [0; 8] {
             if is_auth_key_configured {
                 return Err(ConnectionError::InvalidPacket);
             }
 
-            let messages = guard.deserialize(&mut packet)?;
-            info!(?messages);
+            let ClientMessages::Plain(message) = guard.deserialize(&mut packet)? else {
+                return Err(ConnectionError::InvalidPacket);
+            };
+
+            info!(?message);
         } else {
             let auth_key_id = packet[..8].try_into().unwrap();
             let auth_key = auth_keys.get(&auth_key_id).expect("TODO");

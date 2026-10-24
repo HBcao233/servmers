@@ -11,7 +11,7 @@
 use crc32fast::Hasher;
 use servmers_crypto::DequeBuffer;
 
-use super::{Error, Packer, UnpackedOffset, Unpacker};
+use super::{Error, IntoSplit, Packer, UnpackedOffset, Unpacker};
 
 /// The basic MTProto transport protocol.
 ///
@@ -31,7 +31,10 @@ use super::{Error, Packer, UnpackedOffset, Unpacker};
 /// ```
 ///
 /// [full transport]: https://core.telegram.org/mtproto/mtproto-transports#full
-pub struct Full;
+pub struct Full {
+    packer: FullPacker,
+    unpacker: FullUnpacker,
+}
 
 /// See [`Full`].
 pub struct FullPacker {
@@ -45,8 +48,32 @@ pub struct FullUnpacker {
 
 #[allow(clippy::new_without_default)]
 impl Full {
-    pub fn new() -> (FullPacker, FullUnpacker) {
-        (FullPacker { send_seq: 0 }, FullUnpacker { recv_seq: 0 })
+    pub fn new() -> Self {
+        Self {
+            packer: FullPacker { send_seq: 0 },
+            unpacker: FullUnpacker { recv_seq: 0 },
+        }
+    }
+}
+
+impl Packer for Full {
+    fn pack(&mut self, buffer: &mut DequeBuffer<u8>) {
+        self.packer.pack(buffer);
+    }
+}
+
+impl Unpacker for Full {
+    fn unpack(&mut self, buffer: &mut [u8]) -> Result<UnpackedOffset, Error> {
+        self.unpacker.unpack(buffer)
+    }
+}
+
+impl IntoSplit for Full {
+    type PackerHalf = FullPacker;
+    type UnpackerHalf = FullUnpacker;
+
+    fn into_split(self) -> (Self::PackerHalf, Self::UnpackerHalf) {
+        (self.packer, self.unpacker)
     }
 }
 

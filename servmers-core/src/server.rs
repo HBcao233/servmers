@@ -8,6 +8,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::connection::handle_connection;
+use crate::{Registry, Service};
 
 /// Maximum connection count.
 const MAX_CONNECTION: usize = 1000;
@@ -34,6 +35,8 @@ pub struct Server {
     listener: TcpListener,
     auth_keys: Arc<AuthKeyCache>,
     semaphore: Arc<Semaphore>,
+    registry: Arc<Registry>,
+    services: Arc<DashMap<u32, Arc<dyn Service>>>,
 }
 
 impl Server {
@@ -44,7 +47,16 @@ impl Server {
             listener,
             auth_keys: Arc::new(AuthKeyCache::new(auth_keys)),
             semaphore: Arc::new(Semaphore::new(MAX_CONNECTION)),
+            registry: Arc::new(Registry::new()),
+            services: Arc::new(DashMap::new()),
         })
+    }
+
+    pub fn with_service(self, service: Arc<dyn Service>) -> Self {
+        for constructor_id in service.constructors() {
+            self.services.insert(*constructor_id, Arc::clone(&service));
+        }
+        self
     }
 
     pub async fn run(&self) -> io::Result<()> {
@@ -52,16 +64,18 @@ impl Server {
             let (stream, addr) = self.listener.accept().await?;
             stream.set_nodelay(true)?;
 
-            let auth_keys = Arc::clone(&self.auth_keys);
             let permit = Arc::clone(&self.semaphore)
                 .acquire_owned()
                 .await
                 .expect("semaphore closed");
+            let auth_keys = Arc::clone(&self.auth_keys);
+            let registry = Arc::clone(&self.registry);
+            let services = Arc::clone(&self.services);
 
             tokio::spawn(async move {
                 let _permit = permit;
 
-                match handle_connection(stream, addr, auth_keys).await {
+                match handle_connection(stream, addr, auth_keys, registry, services).await {
                     Ok(()) => {}
                     Err(e) => warn!(%addr, "{e}"),
                 }

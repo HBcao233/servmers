@@ -120,6 +120,7 @@ impl From<crypto::Error> for Error {
     }
 }
 
+#[derive(Debug)]
 pub enum Outbound {
     RpcResult {
         req_msg_id: i64,
@@ -166,8 +167,8 @@ impl Serializable for Outbound {
                 });
                 error.serialize(buf);
             }
-            Self::Update(update) => update.serialize(buf),
-            Self::Other(other) => other.serialize(buf),
+            Self::Update(update) => buf.extend(update.iter().copied()),
+            Self::Other(other) => buf.extend(other.iter().copied()),
         }
     }
 }

@@ -6,7 +6,7 @@ Base on [Lonami/grammers](https://codeberg.org/Lonami/grammers)
 
 ## Current Status
 
-Very early.
+Ping-Pong ok.
 
 ## License
 

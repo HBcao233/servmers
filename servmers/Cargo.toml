@@ -10,6 +10,7 @@ categories = ["network-programming"]
 edition = "2024"
 
 [dependencies]
+servmers-services.workspace = true
 servmers-core.workspace = true
 servmers-crypto.workspace = true
 

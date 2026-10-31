@@ -2,8 +2,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
+use dashmap::DashMap;
 use servmers_mtproto::DequeBuffer;
-use servmers_mtproto::mtp::{self, ClientMessages, DecryptedMessages, Mtp, Outbound};
+use servmers_mtproto::mtp::{self, ClientMessages, DecryptedMessages, Message, Mtp, Outbound};
 use servmers_mtproto::transport::{
     Drive, NegotiateError, NegotiateResult, Packer, TransportDriver,
 };
@@ -15,6 +16,7 @@ use tracing::{debug, info, instrument, trace, warn};
 
 use crate::errors::ConnectionError;
 use crate::server::AuthKeyCache;
+use crate::{Registry, Service, SessionKey};
 
 /// Maximum handshake time.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -44,11 +46,13 @@ const INITIAL_CAPACITY: usize = 8 * 1024;
 /// kilobytes to the maximum data size.
 pub const MAX_FRAME_BYTES: usize = (1024 * 1024) + (8 * 1024);
 
-#[instrument(skip(stream, auth_keys))]
+#[instrument(skip(stream, auth_keys, registry, services))]
 pub async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
     auth_keys: Arc<AuthKeyCache>,
+    registry: Arc<Registry>,
+    services: Arc<DashMap<u32, Arc<dyn Service>>>,
 ) -> Result<(), ConnectionError> {
     let (mut reader, writer) = stream.into_split();
     let mut driver = TransportDriver::new();
@@ -102,7 +106,16 @@ pub async fn handle_connection(
             }
         }
 
-        if let Err(e) = on_packets(&mut packets, Arc::clone(&auth_keys), &write_tx, &mtp) {
+        if let Err(e) = on_packets(
+            &mut packets,
+            Arc::clone(&auth_keys),
+            &write_tx,
+            &mtp,
+            &registry,
+            &services,
+        )
+        .await
+        {
             break Err(e);
         }
 
@@ -131,11 +144,13 @@ pub async fn handle_connection(
     result
 }
 
-fn on_packets(
+async fn on_packets(
     packets: &mut Vec<BytesMut>,
     auth_keys: Arc<AuthKeyCache>,
     write_tx: &mpsc::Sender<Outbound>,
     mtp: &Mutex<Mtp>,
+    registry: &Arc<Registry>,
+    services: &Arc<DashMap<u32, Arc<dyn Service>>>,
 ) -> Result<(), ConnectionError> {
     let mut guard = mtp.lock().unwrap();
     let mut is_auth_key_configured = guard.is_auth_key_configured();
@@ -157,7 +172,9 @@ fn on_packets(
             info!(?message);
         } else {
             let auth_key_id = packet[..8].try_into().unwrap();
-            let auth_key = auth_keys.get(&auth_key_id).expect("TODO");
+            let auth_key = auth_keys
+                .get(&auth_key_id)
+                .ok_or(ConnectionError::Forbidden)?;
             if !is_auth_key_configured {
                 guard.set_auth_key(auth_key.clone());
                 is_auth_key_configured = true;
@@ -174,7 +191,57 @@ fn on_packets(
 
             guard.set_session_id(session_id)?;
 
-            info!(salt, session_id, ?messages);
+            tokio::spawn(on_messages(
+                auth_key_id,
+                session_id,
+                salt,
+                messages,
+                write_tx.clone(),
+                Arc::clone(registry),
+                Arc::clone(services),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+async fn on_messages(
+    auth_key_id: [u8; 8],
+    session_id: i64,
+    salt: i64,
+    messages: Vec<Message>,
+    write_tx: mpsc::Sender<Outbound>,
+    registry: Arc<Registry>,
+    services: Arc<DashMap<u32, Arc<dyn Service>>>,
+) -> Result<(), ConnectionError> {
+    let session = registry.get_or_create(SessionKey {
+        auth_key_id,
+        session_id,
+    });
+    info!(salt, session_id, ?messages);
+
+    for message in messages {
+        if message.body.len() < 4 {
+            return Err(mtp::Error::MessageBufferTooSmall.into());
+        }
+
+        let id = u32::from_le_bytes(message.body[..4].try_into().unwrap());
+        let response = match services.get(&id) {
+            Some(service) => service.handle(&session, &message).await?,
+            None => Some(Outbound::RpcError {
+                req_msg_id: message.msg_id.into_inner(),
+                code: 500,
+                message: "NOT_SUPPORTED".to_string(),
+            }),
+        };
+        debug!(?response);
+
+        if let Some(resp) = response {
+            write_tx
+                .send(resp)
+                .await
+                .map_err(|_| ConnectionError::Io(std::io::ErrorKind::BrokenPipe.into()))?;
         }
     }
 

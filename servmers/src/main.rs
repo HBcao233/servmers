@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use servmers_core::Server;
 use servmers_crypto::AuthKey;
+use servmers_services::PingService;
 use tracing::info;
 
 const PORT: u16 = 2391;
@@ -24,7 +26,11 @@ async fn async_main() {
     info!("{:?}", auth_keys[0].key_id());
 
     let listen = format!("0.0.0.0:{}", PORT);
-    let server = Server::bind(&listen, auth_keys).await.unwrap();
+    let server = Server::bind(&listen, auth_keys)
+        .await
+        .unwrap()
+        .with_service(Arc::new(PingService));
+
     server.run().await.unwrap();
 }
 

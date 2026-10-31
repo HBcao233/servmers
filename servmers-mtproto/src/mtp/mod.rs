@@ -53,7 +53,7 @@ pub enum Error {
     SessionIdChanged,
 
     /// The server's message length was not strictly positive.
-    NegativeMessageLength { got: i32 },
+    NegativeMessageLength { got: usize },
 
     /// The server's message length was past the buffer.
     TooLongMessageLength { got: usize, max_length: usize },

@@ -39,20 +39,24 @@ impl Plain {
             return Err(Error::BadMessageId { got: msg_id });
         }
 
-        let len = i32::deserialize(&mut buf)?;
+        let len = i32::deserialize(&mut buf)? as usize;
         if len <= 0 {
             return Err(Error::NegativeMessageLength { got: len });
         }
-        if (20 + len) as usize > payload.len() {
+
+        /// msg_id (8 bytes) + len (4 bytes)
+        const PREFIX_LEN: usize = 12;
+
+        if len > payload.len() - PREFIX_LEN {
             return Err(Error::TooLongMessageLength {
-                got: len as usize,
-                max_length: payload.len() - 20,
+                got: len,
+                max_length: payload.len() - PREFIX_LEN,
             });
         }
 
         Ok(ClientMessages::Plain(Message {
             msg_id: MsgId(msg_id),
-            body: payload[20..20 + len as usize].into(),
+            body: payload[PREFIX_LEN..PREFIX_LEN + len].into(),
         }))
     }
 

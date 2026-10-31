@@ -8,11 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use servmers_crypto::{
-    DequeBuffer, ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor,
-};
+use servmers_crypto::{ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor};
 
 use super::{Error, IntoSplit, Packer, Tagged, UnpackedOffset, Unpacker};
+use crate::DequeBuffer;
 
 /// Obfuscation layer for other MTProto transport protocols.
 ///

@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
-use servmers_crypto::DequeBuffer;
+use servmers_mtproto::DequeBuffer;
 use servmers_mtproto::mtp::{self, ClientMessages, DecryptedMessages, Mtp, Outbound};
 use servmers_mtproto::transport::{
     Drive, NegotiateError, NegotiateResult, Packer, TransportDriver,

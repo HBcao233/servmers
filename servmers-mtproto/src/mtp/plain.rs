@@ -1,8 +1,7 @@
 use grammers_tl_types::{Cursor, Deserializable, Serializable};
-use servmers_crypto::DequeBuffer;
 
 use super::{ClientMessages, Error, Message};
-use crate::MsgId;
+use crate::{DequeBuffer, MsgId};
 
 /// An implementation of the [Mobile Transport Protocol] for plaintext
 /// (unencrypted) messages.

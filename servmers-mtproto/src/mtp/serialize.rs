@@ -2,11 +2,11 @@ use std::mem;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use grammers_tl_types::{self as tl, Identifiable, Serializable};
-use servmers_crypto::{DequeBuffer, encrypt_data_v2};
+use servmers_crypto::{encrypt_data_v2, get_padding_data_v2};
 
 use super::{MESSAGE_CONTAINER_HEADER_LEN, Mtp, Outbound, PLAIN_PACKET_HEADER_LEN, Plain};
 use crate::utils::StackBuffer;
-use crate::{MsgId, manual_tl};
+use crate::{DequeBuffer, MsgId, manual_tl};
 
 impl Mtp {
     pub fn push(&mut self, buffer: &mut DequeBuffer<u8>, outbound: Outbound) -> Option<MsgId> {
@@ -75,8 +75,7 @@ impl Mtp {
             if buffer.is_empty() {
                 None
             } else {
-                encrypt_data_v2(buffer, self.auth_key.as_ref().unwrap());
-                Some(MsgId(self.last_msg_id as i64))
+                self.encrypt(buffer)
             }
         } else {
             Plain::finalize(buffer)
@@ -178,5 +177,19 @@ impl Mtp {
         }
 
         self.msg_count = 0;
+    }
+
+    fn encrypt(&self, buffer: &mut DequeBuffer<u8>) -> Option<MsgId> {
+        let auth_key = self.auth_key.as_ref().unwrap();
+
+        let (padding, padding_len) = get_padding_data_v2(buffer.len());
+        buffer.extend_back(&padding[..padding_len]);
+
+        let msg_key = encrypt_data_v2(&mut buffer[..], auth_key);
+
+        buffer.extend_front(&msg_key);
+        buffer.extend_front(&auth_key.key_id());
+
+        Some(MsgId(self.last_msg_id as i64))
     }
 }

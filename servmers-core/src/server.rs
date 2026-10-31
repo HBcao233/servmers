@@ -20,7 +20,7 @@ impl AuthKeyCache {
     pub fn new(auth_keys: Vec<AuthKey>) -> Self {
         let map = DashMap::new();
         for auth_key in auth_keys {
-            map.insert(auth_key.id(), auth_key);
+            map.insert(auth_key.key_id(), auth_key);
         }
         Self { map }
     }

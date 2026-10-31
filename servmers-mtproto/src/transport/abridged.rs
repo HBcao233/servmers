@@ -8,9 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use servmers_crypto::DequeBuffer;
-
 use super::{Error, IntoSplit, Packer, Tagged, UnpackedOffset, Unpacker};
+use crate::DequeBuffer;
 
 /// The lightest MTProto transport protocol available.
 ///

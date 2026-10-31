@@ -21,7 +21,7 @@ fn load_auth_keys() -> Result<Vec<AuthKey>, String> {
 
 async fn async_main() {
     let auth_keys = load_auth_keys().unwrap();
-    info!("{:?}", auth_keys[0].id());
+    info!("{:?}", auth_keys[0].key_id());
 
     let listen = format!("0.0.0.0:{}", PORT);
     let server = Server::bind(&listen, auth_keys).await.unwrap();

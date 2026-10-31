@@ -9,9 +9,9 @@
 // except according to those terms.
 
 use crc32fast::Hasher;
-use servmers_crypto::DequeBuffer;
 
 use super::{Error, IntoSplit, Packer, UnpackedOffset, Unpacker};
+use crate::DequeBuffer;
 
 /// The basic MTProto transport protocol.
 ///

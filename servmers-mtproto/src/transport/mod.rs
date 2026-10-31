@@ -30,7 +30,8 @@ pub use intermediate::Intermediate;
 pub use obfuscated::Obfuscated;
 
 pub use grammers_mtproto::transport::{Error, UnpackedOffset};
-use servmers_crypto::DequeBuffer;
+
+use crate::DequeBuffer;
 
 pub trait Packer: Send {
     /// Packs the input buffer in-place.

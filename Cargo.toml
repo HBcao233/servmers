@@ -2,6 +2,7 @@
 members = [
     "servmers",
     "servmers-core",
+    "servmers-services",
     "servmers-mtproto",
     "servmers-crypto",
 ]
@@ -10,16 +11,18 @@ resolver = "2"
 [workspace.dependencies]
 servmers-crypto = { path = "servmers-crypto" }
 servmers-mtproto = { path = "servmers-mtproto" }
+servmers-services = { path = "servmers-services" }
 servmers-core = { path = "servmers-core" }
 
-grammers-crypto = { git = "https://codeberg.org/Lonami/grammers.git" }
-grammers-mtproto = { git = "https://codeberg.org/Lonami/grammers.git" }
-grammers-tl-types = { git = "https://codeberg.org/Lonami/grammers.git", features = ["tl-mtproto"] }
-grammers-mtsender = { git = "https://codeberg.org/Lonami/grammers.git" }
+grammers-crypto = { git = "https://codeberg.org/Lonami/grammers.git", rev = "1e31e73cd9" }
+grammers-mtproto = { git = "https://codeberg.org/Lonami/grammers.git", rev = "1e31e73cd9" }
+grammers-tl-types = { git = "https://codeberg.org/Lonami/grammers.git", rev = "1e31e73cd9", features = ["tl-mtproto", "deserializable-functions"] }
+grammers-mtsender = { git = "https://codeberg.org/Lonami/grammers.git", rev = "1e31e73cd9" }
+
 tracing = "0.1.44"
 
-[patch.'https://codeberg.org/Lonami/grammers.git']
-grammers-crypto = { path = "../grammers/grammers-crypto" }
-grammers-mtproto = { path = "../grammers/grammers-mtproto" }
-grammers-tl-types = { path = "../grammers/grammers-tl-types" }
-grammers-mtsender = { path = "../grammers/grammers-mtsender" }
+# [patch.'https://codeberg.org/Lonami/grammers.git']
+# grammers-crypto = { path = "../grammers/grammers-crypto" }
+# grammers-mtproto = { path = "../grammers/grammers-mtproto" }
+# grammers-tl-types = { path = "../grammers/grammers-tl-types" }
+# grammers-mtsender = { path = "../grammers/grammers-mtsender" }

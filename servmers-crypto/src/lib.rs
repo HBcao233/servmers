@@ -13,13 +13,13 @@
 
 #![deny(unsafe_code)]
 
-mod auth_key;
 mod obfuscated;
 mod sha;
 
-pub use auth_key::AuthKey;
-pub use grammers_crypto::{DequeBuffer, Error, aes};
+pub use grammers_crypto::{Error, aes};
 pub use obfuscated::{ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor};
+
+pub use grammers_crypto::{AuthKey, MAX_PADDING_LEN, get_padding_data_v2};
 
 enum Side {
     Client,
@@ -40,14 +40,14 @@ impl Side {
 /// returning the pair `(key, iv)` for use in AES-IGE mode.
 ///
 /// [guidelines for MTProto 2]: https://core.telegram.org/mtproto/description#defining-aes-key-and-initialization-vector
-fn calc_key(auth_key: &AuthKey, msg_key: &[u8; 16], side: Side) -> ([u8; 32], [u8; 32]) {
+fn calc_key(auth_key: &[u8; 256], msg_key: &[u8; 16], side: Side) -> ([u8; 32], [u8; 32]) {
     let x = side.x();
 
     // sha256_a = SHA256 (msg_key + substr (auth_key, x, 36));
-    let sha256_a = sha256!(msg_key, &auth_key.data[x..x + 36]);
+    let sha256_a = sha256!(msg_key, &auth_key[x..x + 36]);
 
     // sha256_b = SHA256 (substr (auth_key, 40+x, 36) + msg_key);
-    let sha256_b = sha256!(&auth_key.data[40 + x..40 + x + 36], msg_key);
+    let sha256_b = sha256!(&auth_key[40 + x..40 + x + 36], msg_key);
 
     // aes_key = substr (sha256_a, 0, 8) + substr (sha256_b, 8, 16) + substr (sha256_a, 24, 8);
     let aes_key = {
@@ -70,37 +70,22 @@ fn calc_key(auth_key: &AuthKey, msg_key: &[u8; 16], side: Side) -> ([u8; 32], [u
     (aes_key, aes_iv)
 }
 
-/// Determines the padding length needed for a plaintext of a certain length,
-/// according to the following citation:
-///
-/// > Note that MTProto 2.0 requires from 12 to 1024 bytes of padding
-/// > [...] the resulting message length be divisible by 16 bytes
-fn determine_padding_v2_length(len: usize) -> usize {
-    16 + (16 - (len % 16))
-}
-
 /// This function implements the [MTProto 2.0 algorithm] for computing
 /// `aes_key` and `aes_iv` from `auth_key` and `msg_key` as specified
 ///
 /// [MTProto 2.0 algorithm]: https://core.telegram.org/mtproto/description#defining-aes-key-and-initialization-vector
-pub fn encrypt_data_v2(buffer: &mut DequeBuffer<u8>, auth_key: &AuthKey) {
-    let random_padding = {
-        let mut rnd = [0; 32];
-        getrandom::fill(&mut rnd).expect("failed to generate a secure padding");
-        rnd
-    };
+#[must_use]
+pub fn encrypt_data_v2(buffer: &mut [u8], auth_key: &AuthKey) -> [u8; 16] {
+    debug_assert_eq!(buffer.len() % 16, 0, "buffer should have been padded");
 
-    // "Note that MTProto 2.0 requires from 12 to 1024 bytes of padding"
-    // "[...] the resulting message length be divisible by 16 bytes"
-    let padding_len = determine_padding_v2_length(buffer.len());
-    buffer.extend_back(&random_padding[0..padding_len]);
+    let auth_key = auth_key.to_bytes();
 
     // Encryption is done by the server
     let side = Side::Server;
     let x = side.x();
 
     // msg_key_large = SHA256 (substr (auth_key, 88+x, 32) + plaintext + random_padding);
-    let msg_key_large = sha256!(&auth_key.data[88 + x..88 + x + 32], &buffer[..]);
+    let msg_key_large = sha256!(&auth_key[88 + x..88 + x + 32], &buffer[..]);
 
     // msg_key = substr (msg_key_large, 8, 16);
     let msg_key = {
@@ -110,12 +95,11 @@ pub fn encrypt_data_v2(buffer: &mut DequeBuffer<u8>, auth_key: &AuthKey) {
     };
 
     // Calculate the key
-    let (key, iv) = calc_key(auth_key, &msg_key, side);
+    let (key, iv) = calc_key(&auth_key, &msg_key, side);
 
     aes::ige_encrypt(&mut buffer[..], &key, &iv);
 
-    buffer.extend_front(&msg_key);
-    buffer.extend_front(&auth_key.key_id);
+    msg_key
 }
 
 /// This method is the inverse of `encrypt_data_v2`.
@@ -134,20 +118,22 @@ pub fn decrypt_data_v2<'b>(
 
     // TODO Check salt, session_id and sequence_number
     let key_id = &buffer[..8];
-    if auth_key.key_id != *key_id {
+    if auth_key.key_id() != *key_id {
         return Err(Error::AuthKeyMismatch);
     }
+
+    let auth_key = auth_key.to_bytes();
 
     let mut msg_key = [0; 16];
     msg_key.copy_from_slice(&buffer[8..8 + 16]);
 
-    let (key, iv) = calc_key(auth_key, &msg_key, side);
+    let (key, iv) = calc_key(&auth_key, &msg_key, side);
 
     aes::ige_decrypt(&mut buffer[8 + 16..], &key, &iv);
     let plaintext = &buffer[8 + 16..];
 
     // https://core.telegram.org/mtproto/security_guidelines#mtproto-encrypted-messages
-    let our_key = sha256!(&auth_key.data[88 + x..88 + x + 32], &plaintext);
+    let our_key = sha256!(&auth_key[88 + x..88 + x + 32], &plaintext);
 
     if msg_key != our_key[8..8 + 16] {
         return Err(Error::MessageKeyMismatch);

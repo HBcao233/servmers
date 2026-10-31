@@ -231,8 +231,8 @@ async fn on_messages(
             Some(service) => service.handle(&session, &message).await?,
             None => Some(Outbound::RpcError {
                 req_msg_id: message.msg_id.into_inner(),
-                code: 500,
-                message: "NOT_SUPPORTED".to_string(),
+                code: 400,
+                message: "METHOD_INVALID".to_string(),
             }),
         };
         debug!(?response);

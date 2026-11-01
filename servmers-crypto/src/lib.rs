@@ -14,12 +14,15 @@
 #![deny(unsafe_code)]
 
 mod obfuscated;
+pub mod rsa;
 mod sha;
 
 pub use grammers_crypto::{Error, aes};
 pub use obfuscated::{ObfuscatedCipher, ObfuscatedCipherDecryptor, ObfuscatedCipherEncryptor};
 
-pub use grammers_crypto::{AuthKey, MAX_PADDING_LEN, get_padding_data_v2};
+pub use grammers_crypto::{
+    AuthKey, MAX_PADDING_LEN, generate_key_data_from_nonce, get_padding_data_v2,
+};
 
 enum Side {
     Client,

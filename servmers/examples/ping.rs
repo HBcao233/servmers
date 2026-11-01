@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
 
 use grammers_mtproto::transport;
-use grammers_mtsender::connect_with_auth;
+use grammers_mtsender::connect;
 use grammers_tl_types::functions;
 
 const PORT: u16 = 2391;
@@ -25,12 +24,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = format!("127.0.0.1:{}", PORT);
 
-    let mut sender = connect_with_auth(
-        transport::Obfuscated::new(transport::Abridged::new()),
+    let mut sender = connect(
+        // transport::Obfuscated::new(
+        transport::Abridged::new(),
+        // ),
         grammers_mtsender::ServerAddr::Tcp {
             address: std::net::SocketAddr::from_str(&addr).unwrap(),
         },
-        auth_key,
+        // auth_key,
     )
     .await?;
     println!("connected");
@@ -39,9 +40,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = sender.invoke(&functions::Ping { ping_id: 0 }).await;
 
-    println!("  <- got {:?}", response);
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    println!("<- got {:?}", response);
 
     Ok(())
 }

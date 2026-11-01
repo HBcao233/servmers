@@ -7,8 +7,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
-use crate::connection::handle_connection;
-use crate::{Registry, Service};
+use crate::{Connection, Registry, Service};
 
 /// Maximum connection count.
 const MAX_CONNECTION: usize = 1000;
@@ -75,7 +74,10 @@ impl Server {
             tokio::spawn(async move {
                 let _permit = permit;
 
-                match handle_connection(stream, addr, auth_keys, registry, services).await {
+                match Connection::new()
+                    .handle(stream, addr, auth_keys, registry, services)
+                    .await
+                {
                     Ok(()) => {}
                     Err(e) => warn!(%addr, "{e}"),
                 }

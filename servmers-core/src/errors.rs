@@ -1,7 +1,7 @@
 use std::{fmt, io};
 
-// use grammers_tl_types as tl;
-use servmers_mtproto::{mtp, transport};
+use grammers_tl_types as tl;
+use servmers_mtproto::{authentication, mtp, transport};
 
 /// This error occurs when reading from the network fails.
 #[derive(Debug)]
@@ -22,6 +22,10 @@ pub enum ConnectionError {
     Transport(transport::Error),
     /// Error propagated from the underlying [`mtp`].
     Mtp(mtp::Error),
+    /// Error propagated from the underlying [`tl::deserialize`].
+    Deserialize(tl::deserialize::Error),
+    /// Error propagated from the underlying [`authentication`].
+    Authentication(authentication::Error),
 }
 
 impl std::error::Error for ConnectionError {}
@@ -41,6 +45,8 @@ impl Clone for ConnectionError {
             Self::UnsupportedTransport => Self::UnsupportedTransport,
             Self::Transport(e) => Self::Transport(e.clone()),
             Self::Mtp(e) => Self::Mtp(e.clone()),
+            Self::Deserialize(e) => Self::Deserialize(e.clone()),
+            Self::Authentication(e) => Self::Authentication(e.clone()),
         }
     }
 }
@@ -56,6 +62,8 @@ impl fmt::Display for ConnectionError {
             Self::UnsupportedTransport => write!(f, "connection error, unsupported transport"),
             Self::Transport(err) => write!(f, "connection error, transport-level: {err}"),
             Self::Mtp(err) => write!(f, "connection error, mtp-level: {err}"),
+            Self::Deserialize(err) => write!(f, "connection error, deserialize-level: {err}"),
+            Self::Authentication(err) => write!(f, "connection error, authentication-level: {err}"),
         }
     }
 }
@@ -78,10 +86,14 @@ impl From<mtp::Error> for ConnectionError {
     }
 }
 
-/*
 impl From<tl::deserialize::Error> for ConnectionError {
     fn from(error: tl::deserialize::Error) -> Self {
         Self::Deserialize(error.into())
     }
 }
-*/
+
+impl From<authentication::Error> for ConnectionError {
+    fn from(error: authentication::Error) -> Self {
+        Self::Authentication(error.into())
+    }
+}

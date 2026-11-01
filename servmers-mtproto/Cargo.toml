@@ -26,3 +26,11 @@ crc32fast = "1.5.0"
 # Messages may be gzip-encoded to reduce bandwidth, so this crate is used for both decompressing
 # incoming messages and compressing them when it is worth it (based on some simple heuristics).
 flate2 = "1.1.9"
+
+getrandom = "0.4.3"
+# glass_pumpkin = "2.0.0"
+num-prime = "0.7.0"
+rand = "^0.8.6"
+num-bigint = "0.5"
+jiff = { version = "0.2.37", default-features = false, features = ["std"] }
+sha1 = "0.11.0"

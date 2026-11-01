@@ -1,3 +1,4 @@
+pub mod authentication;
 mod manual_tl;
 pub mod mtp;
 pub mod transport;

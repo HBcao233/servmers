@@ -28,6 +28,10 @@ impl AuthKeyCache {
     pub fn get(&self, id: &[u8; 8]) -> Option<dashmap::mapref::one::Ref<'_, [u8; 8], AuthKey>> {
         self.map.get(id)
     }
+
+    pub fn insert(&self, auth_key: AuthKey) {
+        self.map.insert(auth_key.key_id(), auth_key);
+    }
 }
 
 pub struct Server {

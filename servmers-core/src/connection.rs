@@ -51,7 +51,8 @@ pub const MAX_FRAME_BYTES: usize = (1024 * 1024) + (8 * 1024);
 
 pub struct Connection {
     auth_key_id: [u8; 8],
-    dh: Option<authentication::DHData>,
+    dh: Option<authentication::DhData>,
+    dh_gen: Option<authentication::DhGenData>,
 }
 
 #[derive(Debug)]
@@ -65,6 +66,7 @@ impl Connection {
         Self {
             auth_key_id: [0; 8],
             dh: None,
+            dh_gen: None,
         }
     }
 
@@ -136,6 +138,7 @@ impl Connection {
                         write_tx.clone(),
                         Arc::clone(&registry),
                         Arc::clone(&services),
+                        Arc::clone(&auth_keys),
                     )
                     .await?
                 }
@@ -224,10 +227,14 @@ impl Connection {
         tx: mpsc::Sender<WriteCommand>,
         registry: Arc<Registry>,
         services: Arc<DashMap<u32, Arc<dyn Service>>>,
+        auth_keys: Arc<AuthKeyCache>,
     ) -> Result<(), ConnectionError> {
         for message in messages {
             match message {
-                ClientMessages::Plain(msg) => self.on_plain_message(msg, tx.clone()).await?,
+                ClientMessages::Plain(msg) => {
+                    self.on_plain_message(msg, tx.clone(), Arc::clone(&auth_keys))
+                        .await?
+                }
                 ClientMessages::Encrypted(DecryptedMessages {
                     salt,
                     session_id,
@@ -294,9 +301,8 @@ impl Connection {
         &mut self,
         message: Message,
         tx: mpsc::Sender<WriteCommand>,
+        auth_keys: Arc<AuthKeyCache>,
     ) -> Result<(), ConnectionError> {
-        info!(?message);
-
         let mut buf = Cursor::from_slice(&message.body);
         let response = match u32::deserialize(&mut buf)? {
             tl::functions::ReqPqMulti::CONSTRUCTOR_ID => {
@@ -307,31 +313,36 @@ impl Connection {
 
                 WriteCommand::Outbound(Outbound::Other(response.to_bytes()))
             }
-            tl::functions::ReqDhParams::CONSTRUCTOR_ID => {
-                let request = tl::functions::ReqDhParams::deserialize(&mut buf)?;
-                let (new_dh, decrypted_data) = authentication::step2(request)?;
-                match self.dh {
-                    Some(ref dh) => {
-                        dh.check(new_dh)?;
+            tl::functions::ReqDhParams::CONSTRUCTOR_ID => match self.dh {
+                Some(ref dh) => {
+                    let request = tl::functions::ReqDhParams::deserialize(&mut buf)?;
 
-                        let data = tl::enums::PQInnerData::from_bytes(&decrypted_data)?;
-                        let response = authentication::do_step2(dh, data)?;
+                    let (response, dh_gen) = authentication::step2(dh, request)?;
+                    self.dh_gen = Some(dh_gen);
 
-                        WriteCommand::Outbound(Outbound::Other(response.to_bytes()))
-                    }
-                    None => WriteCommand::Raw((-404i32).to_le_bytes().to_vec()),
+                    WriteCommand::Outbound(Outbound::Other(response.to_bytes()))
                 }
-            }
-            tl::functions::SetClientDhParams::CONSTRUCTOR_ID => {
-                todo!();
-            }
+                None => WriteCommand::Raw((-404i32).to_le_bytes().to_vec()),
+            },
+            tl::functions::SetClientDhParams::CONSTRUCTOR_ID => match (&self.dh, &self.dh_gen) {
+                (Some(dh), Some(dh_gen)) => {
+                    let request = tl::functions::SetClientDhParams::deserialize(&mut buf)?;
+
+                    let (response, auth_key) = authentication::step3(dh, dh_gen, request)?;
+                    if matches!(response, tl::enums::SetClientDhParamsAnswer::DhGenOk(_)) {
+                        auth_keys.insert(auth_key);
+                    }
+
+                    WriteCommand::Outbound(Outbound::Other(response.to_bytes()))
+                }
+                _ => WriteCommand::Raw((-404i32).to_le_bytes().to_vec()),
+            },
             _ => WriteCommand::Outbound(Outbound::RpcError {
                 req_msg_id: message.msg_id.into_inner(),
                 code: 400,
                 message: "METHOD_INVALID".to_string(),
             }),
         };
-        debug!(?response);
 
         tx.send(response)
             .await

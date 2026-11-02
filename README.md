@@ -6,7 +6,8 @@ Base on [Lonami/grammers](https://codeberg.org/Lonami/grammers)
 
 ## Current Status
 
-Ping-Pong ok.
+- Ping-Pong ok.
+- Generate Authorization Key ok.
 
 ## License
 
